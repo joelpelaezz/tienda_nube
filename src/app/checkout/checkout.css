@@ -1,0 +1,578 @@
+/* ─── Design Tokens (Tendencia Shop style) ─── */
+:root {
+  --ch-primary: #043E8C;
+  --ch-primary-hover: #03367a;
+  --ch-text: #393D36;
+  --ch-text-muted: #6b7280;
+  --ch-border: #C4C5C3;
+  --ch-border-focus: #043E8C;
+  --ch-bg: #ffffff;
+  --ch-bg-subtle: #f9fafb;
+  --ch-radius: 6px;
+  --ch-radius-sm: 4px;
+  --ch-font: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ch-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ch-shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* ─── Main Layout ─── */
+.ch-main {
+  min-height: 100vh;
+  background: var(--ch-bg-subtle);
+  font-family: var(--ch-font);
+  color: var(--ch-text);
+}
+
+/* ─── Breadcrumb / Logo bar ─── */
+.ch-breadcrumb {
+  background: var(--ch-bg);
+  border-bottom: 1px solid #e5e5e5;
+  padding: 12px 0;
+}
+
+.ch-logo-link {
+  display: inline-block;
+}
+
+.ch-logo {
+  height: 36px;
+  width: auto;
+}
+
+/* ─── Steps Bar ─── */
+.ch-steps-bar {
+  background: var(--ch-bg);
+  border-bottom: 1px solid #e5e5e5;
+  padding: 16px 0;
+}
+
+.ch-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  max-width: 480px;
+}
+
+.ch-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ch-step-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #e5e7eb;
+  color: #9ca3af;
+  border: 2px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.ch-step-circle.ch-step-active {
+  background: var(--ch-primary);
+  border-color: var(--ch-primary);
+  color: white;
+}
+
+.ch-step-circle.ch-step-done {
+  background: var(--ch-primary);
+  border-color: var(--ch-primary);
+  color: white;
+}
+
+.ch-step-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.ch-step-label.ch-step-label-active {
+  color: var(--ch-primary);
+  font-weight: 700;
+}
+
+.ch-step-line {
+  flex: 1;
+  height: 2px;
+  background: #e5e7eb;
+  margin: 0 12px;
+  min-width: 32px;
+}
+
+.ch-step-line.ch-step-line-done {
+  background: var(--ch-primary);
+}
+
+/* ─── Page Layout ─── */
+.ch-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  padding: 32px 0 48px;
+  align-items: start;
+}
+
+.ch-form-col {
+  min-width: 0;
+}
+
+.ch-summary-col {
+  position: sticky;
+  top: 24px;
+}
+
+/* ─── Sections ─── */
+.ch-section {
+  background: var(--ch-bg);
+  border: 1px solid #e5e5e5;
+  border-radius: var(--ch-radius);
+  padding: 24px;
+  box-shadow: var(--ch-shadow-card);
+}
+
+.ch-section-header {
+  margin-bottom: 20px;
+}
+
+.ch-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ch-text);
+  margin: 0 0 4px;
+}
+
+.ch-subtitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ch-text);
+  margin: 0 0 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ch-order-ref {
+  font-size: 13px;
+  color: var(--ch-text-muted);
+  margin: 0;
+}
+
+/* ─── Form Fields ─── */
+.ch-field-group {
+  margin-bottom: 14px;
+}
+
+.ch-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ch-text);
+  margin-bottom: 5px;
+}
+
+.ch-input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--ch-font);
+  color: var(--ch-text);
+  background: var(--ch-bg);
+  border: 1px solid var(--ch-border);
+  border-radius: var(--ch-radius-sm);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.ch-input:focus {
+  border-color: var(--ch-border-focus);
+  box-shadow: 0 0 0 3px rgba(4, 62, 140, 0.1);
+}
+
+.ch-input::placeholder {
+  color: #b0b5b0;
+}
+
+.ch-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.ch-divider {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 20px 0;
+}
+
+/* ─── Info Card (payment step) ─── */
+.ch-info-card {
+  background: var(--ch-bg-subtle);
+  border: 1px solid #e5e5e5;
+  border-radius: var(--ch-radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.ch-info-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.ch-info-row:last-of-type {
+  margin-bottom: 0;
+}
+
+.ch-info-label {
+  color: var(--ch-text-muted);
+  min-width: 70px;
+  font-weight: 500;
+}
+
+.ch-info-value {
+  color: var(--ch-text);
+  font-weight: 500;
+}
+
+.ch-edit-btn {
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--ch-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  font-family: var(--ch-font);
+}
+
+/* ─── Payment Box ─── */
+.ch-payment-box {
+  background: var(--ch-bg-subtle);
+  border: 1px solid #e5e5e5;
+  border-radius: var(--ch-radius-sm);
+  padding: 20px;
+}
+
+.ch-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--ch-text-muted);
+  font-size: 13px;
+}
+
+.ch-mp-note {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ch-text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ─── Summary Card ─── */
+.ch-summary-card {
+  background: var(--ch-bg);
+  border: 1px solid #e5e5e5;
+  border-radius: var(--ch-radius);
+  padding: 20px;
+  box-shadow: var(--ch-shadow-card);
+}
+
+.ch-summary-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ch-text);
+  margin: 0 0 16px;
+}
+
+.ch-summary-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ch-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ch-summary-item-img {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--ch-radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ch-summary-item-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ch-summary-item-img-placeholder {
+  font-size: 18px;
+}
+
+.ch-summary-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ch-summary-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ch-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ch-summary-item-variant {
+  font-size: 11px;
+  color: var(--ch-text-muted);
+}
+
+.ch-summary-item-qty {
+  font-size: 11px;
+  color: var(--ch-text-muted);
+}
+
+.ch-summary-item-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ch-text);
+  flex-shrink: 0;
+}
+
+.ch-summary-divider {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 12px 0;
+}
+
+.ch-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ch-text);
+  margin-bottom: 8px;
+}
+
+.ch-summary-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ch-text);
+}
+
+.ch-coupon-btn {
+  margin-top: 14px;
+  width: 100%;
+  background: none;
+  border: 1px dashed var(--ch-border);
+  border-radius: var(--ch-radius-sm);
+  padding: 8px;
+  font-size: 12px;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  font-family: var(--ch-font);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.ch-coupon-btn:hover {
+  border-color: var(--ch-primary);
+  color: var(--ch-primary);
+}
+
+/* ─── Buttons ─── */
+.ch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 24px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--ch-font);
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, box-shadow 0.15s;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.ch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ch-btn-primary {
+  background: var(--ch-primary);
+  color: white;
+}
+
+.ch-btn-primary:hover:not(:disabled) {
+  background: var(--ch-primary-hover);
+}
+
+.ch-btn-full {
+  width: 100%;
+}
+
+.ch-btn-secondary {
+  background: white;
+  color: var(--ch-text);
+  border: 1px solid var(--ch-border);
+}
+
+.ch-btn-secondary:hover {
+  border-color: var(--ch-primary);
+  color: var(--ch-primary);
+}
+
+/* ─── Error ─── */
+.ch-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  border-radius: var(--ch-radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* ─── Empty State ─── */
+.ch-empty-sub {
+  color: var(--ch-text-muted);
+  font-size: 15px;
+  margin-bottom: 24px;
+}
+
+/* ─── Help Note ─── */
+.ch-help-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--ch-text-muted);
+}
+
+.ch-help-note a {
+  color: var(--ch-primary);
+  text-decoration: none;
+}
+
+/* ─── Gracias Page (legacy compat) ─── */
+.checkout-gracias-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #f0fdf4;
+  color: #16a34a;
+  margin-bottom: 1.5rem;
+}
+
+.checkout-gracias-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.checkout-gracias-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 0.75rem;
+}
+
+.checkout-gracias-subtitle {
+  font-size: 1.0625rem;
+  color: #555;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.checkout-gracias-details {
+  background: #f9f9f9;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.checkout-gracias-total {
+  font-size: 1.125rem;
+  color: #333;
+  margin-bottom: 0.75rem;
+}
+
+.checkout-gracias-total strong {
+  color: #c0a062;
+}
+
+.checkout-gracias-text {
+  font-size: 0.9375rem;
+  color: #666;
+  line-height: 1.6;
+}
+
+.checkout-gracias-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+  .ch-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ch-summary-col {
+    position: static;
+    order: -1;
+  }
+
+  .ch-steps {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .ch-step-label {
+    display: none;
+  }
+
+  .ch-step-label.ch-step-label-active {
+    display: inline;
+  }
+}
