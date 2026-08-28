@@ -55,6 +55,16 @@ export const categories = pgTable('categories', {
 });
 
 // ──────────────────────────────────────────────────────
+// Product <-> Category junction (many-to-many)
+// ──────────────────────────────────────────────────────
+export const productCategories = pgTable('product_categories', {
+  productId: integer('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  categoryId: integer('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: { columns: [table.productId, table.categoryId] },
+}));
+
+// ──────────────────────────────────────────────────────
 // Products
 // ──────────────────────────────────────────────────────
 export const products = pgTable('products', {
@@ -69,6 +79,40 @@ export const products = pgTable('products', {
   badge: text('badge'),
   categoryId: integer('category_id'),
   isVisible: boolean('is_visible').default(true),
+  // Shipping / physical
+  weight: integer('weight'),          // grams
+  length: integer('length'),         // cm
+  width: integer('width'),           // cm
+  height: integer('height'),         // cm
+  // Inventory
+  sku: text('sku'),
+  barcode: text('barcode'),
+  // Product type: 'physical' | 'digital'
+  productType: text('product_type').default('physical'),
+  // SEO
+  seoTitle: text('seo_title'),
+  seoDescription: text('seo_description'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ──────────────────────────────────────────────────────
+// Variant Types (Color, Talle, etc.)
+// ──────────────────────────────────────────────────────
+export const variantTypes = pgTable('variant_types', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  position: integer('position').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ──────────────────────────────────────────────────────
+// Variant Options (Rojo, Azul / S, M, L)
+// ──────────────────────────────────────────────────────
+export const variantOptions = pgTable('variant_options', {
+  id: serial('id').primaryKey(),
+  variantTypeId: integer('variant_type_id').notNull().references(() => variantTypes.id, { onDelete: 'cascade' }),
+  value: text('value').notNull(),
+  position: integer('position').default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -81,6 +125,17 @@ export const productVariants = pgTable('product_variants', {
   name: text('name').notNull(),
   price: integer('price'),
   stock: integer('stock').default(0),
+  optionIds: text('option_ids').array(),
+  variantTypeId: integer('variant_type_id').references(() => variantTypes.id),
+  // Per-variant shipping
+  weight: integer('weight'),
+  length: integer('length'),
+  width: integer('width'),
+  height: integer('height'),
+  // Per-variant inventory
+  sku: text('sku'),
+  barcode: text('barcode'),
+  isVisible: boolean('is_visible').default(true),
 });
 
 // ──────────────────────────────────────────────────────
@@ -91,7 +146,8 @@ export const productImages = pgTable('product_images', {
   productId: integer('product_id').notNull(),
   url: text('url').notNull(),
   alt: text('alt'),
-  position: integer('position').default(0),
+  position: integer('position').notNull().default(0),
+  src: text('src').default('url'), // 'url' | 'file'
 });
 
 // ──────────────────────────────────────────────────────
@@ -126,9 +182,39 @@ export const orders = pgTable('orders', {
   customerId: integer('customer_id'),
   status: text('status').notNull().default('pending'),  // pending, confirmed, packed, shipped, delivered, cancelled
   total: integer('total').notNull().default(0),
+  discount: integer('discount').default(0),  // discount applied in cents
+  couponCode: text('coupon_code'),
   notes: text('notes'),
+  mpPaymentId: text('mp_payment_id'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ──────────────────────────────────────────────────────
+// Settings (key-value store for configurable options)
+// ──────────────────────────────────────────────────────
+export const settings = pgTable('settings', {
+  key: text('key').primaryKey(),  // e.g. 'payment_mp_enabled'
+  value: text('value').notNull(), // stored as string, parsed by consumer
+});
+
+export type SettingKey = typeof settings.$inferSelect['key'];
+
+// ──────────────────────────────────────────────────────
+// Coupons
+// ──────────────────────────────────────────────────────
+export const coupons = pgTable('coupons', {
+  id: serial('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  type: text('type').notNull(),  // 'percent' | 'fixed'
+  value: integer('value').notNull(),  // percent (e.g. 10 = 10%) or fixed amount in cents
+  minPurchase: integer('min_purchase'),  // minimum purchase in cents to apply coupon
+  maxUses: integer('max_uses'),  // null = unlimited
+  usedCount: integer('used_count').default(0),
+  validFrom: timestamp('valid_from'),
+  validUntil: timestamp('valid_until'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
 });
 
 // ──────────────────────────────────────────────────────
