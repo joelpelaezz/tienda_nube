@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { useCartStore } from '@/lib/store';
 import { usePathname } from 'next/navigation';
@@ -11,11 +12,42 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [promoBar, setPromoBar] = useState({
+    enabled: true,
+    text: 'Descuentos exclusivos para comprar al por mayor - ¡contactanos!',
+    link: '',
+  });
   const { items, toggleCart } = useCartStore();
   const pathname = usePathname();
   const { data: session } = useSession();
 
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  useEffect(() => {
+    fetch('/api/store-settings')
+      .then((response) => response.json())
+      .then((settings: { promoBarEnabled?: boolean; promoBarText?: string; promoBarLink?: string }) => {
+        setPromoBar({
+          enabled: settings.promoBarEnabled !== false,
+          text: settings.promoBarText || 'Descuentos exclusivos para comprar al por mayor - ¡contactanos!',
+          link: settings.promoBarLink || '',
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const promoContent = (mobile = false) => (
+    <span className={`header-promo-track ${mobile ? 'header-promo-track--mobile' : ''}`}>
+      <span>{promoBar.text}</span>
+      <span aria-hidden="true"> · {promoBar.text}</span>
+    </span>
+  );
+
+  const promoBarContent = (mobile = false) => promoBar.link ? (
+    <a href={promoBar.link} className="header-promo-link" aria-label={promoBar.text}>
+      {promoContent(mobile)}
+    </a>
+  ) : promoContent(mobile);
 
   const getPageName = () => {
     if (pathname === '/') return 'INICIO';
@@ -27,10 +59,8 @@ export default function Header() {
   return (
     <>
       {/* Barra superior - solo desktop */}
-      <div className="header-top-bar hidden md:block">
-        <div className="header-top-promo">
-          Descuentos exclusivos para comprar al por mayor - ¡contactanos!
-        </div>
+      {promoBar.enabled && <div className="header-top-bar hidden md:block">
+        <div className="header-top-promo">{promoBarContent()}</div>
         <div className="header-top-info container flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <a href="tel:03883345437" className="hover:underline">
@@ -62,21 +92,21 @@ export default function Header() {
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Barra promo mobile */}
-      <div className="header-mobile-promo md:hidden">
-        Descuentos exclusivos para compras al por mayor. ¡Contactanos!
-      </div>
+      {promoBar.enabled && <div className="header-mobile-promo md:hidden">{promoBarContent(true)}</div>}
 
       {/* Header principal - desktop */}
       <header className="header-main hidden md:block">
         <div className="container">
           <div className="flex items-center justify-between py-3">
             <Link href="/" className="flex-shrink-0">
-              <img
+              <Image
                 src="https://dcdn-us.mitiendanube.com/stores/005/154/974/themes/common/logo-1470273192-1725027146-d4ccbc266b0dfc03cd9ab1fea319470f1725027146-480-0.webp"
                 alt="Tendencia Shop"
+                width={240}
+                height={64}
                 className="h-16 w-auto"
               />
             </Link>
@@ -226,9 +256,11 @@ export default function Header() {
       {/* Logo mobile - debajo del header */}
       <div className="md:hidden flex justify-center py-3 bg-white border-b border-gray-100">
         <Link href="/">
-          <img
+          <Image
             src="https://dcdn-us.mitiendanube.com/stores/005/154/974/themes/common/logo-1470273192-1725027146-d4ccbc266b0dfc03cd9ab1fea319470f1725027146-480-0.webp"
             alt="Tendencia Shop"
+            width={240}
+            height={64}
             className="h-16 w-auto"
           />
         </Link>

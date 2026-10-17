@@ -4,11 +4,12 @@ import ProductCard from '@/components/ProductCard';
 import CartDrawer from '@/components/CartDrawer';
 import SocialIcons from '@/components/social/SocialIcons';
 import { db } from '@/lib/db';
-import { products, productImages, categories, productVariants } from '@/drizzle/schema';
-import { eq, desc, and, or, like, sql, inArray } from 'drizzle-orm';
+import { products, categories, productCategories, productImages, productVariants, variantOptions, variantTypes } from '@/drizzle/schema';
+import { eq, desc, asc, and, or, ilike, sql, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import type { ProductCardData } from '@/types/product';
 import type { Metadata } from 'next';
+import { getPaymentMethods } from '@/app/admin/configuracion/actions';
 
 export const metadata: Metadata = {
   title: 'Productos - Tendencia Shop',
@@ -18,7 +19,10 @@ export const metadata: Metadata = {
 interface CatalogPageProps {
   searchParams: Promise<{
     q?: string;
+    categoria?: string;
     color?: string;
+    disfraz?: string;
+    tamano?: string;
     precio_desde?: string;
     precio_hasta?: string;
     orden?: string;
@@ -27,27 +31,50 @@ interface CatalogPageProps {
 }
 
 async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
-  const { q, precio_desde, precio_hasta, orden, page } = params;
+  const { q, categoria, color, disfraz, tamano, precio_desde, precio_hasta, orden, page } = params;
   const limit = 21;
-  const currentPage = parseInt(page || '1');
+  const currentPage = Math.max(1, Number.parseInt(page || '1', 10) || 1);
   const offset = (currentPage - 1) * limit;
 
   try {
     const conditions = [];
 
+    if (categoria) {
+      const [category] = await db.select({ id: categories.id }).from(categories).where(eq(categories.slug, categoria)).limit(1);
+      if (!category) return { products: [] as ProductCardData[], totalPages: 0, currentPage: 1 };
+      conditions.push(sql`exists (
+           select 1 from product_categories pc
+           where pc.product_id = ${products.id}
+             and pc.category_id = ${category.id}
+        )`);
+    }
+
     if (q) {
       conditions.push(or(
-        like(products.name, `%${q}%`),
-        like(products.slug, `%${q}%`)
+         ilike(products.name, `%${q}%`),
+         ilike(products.slug, `%${q}%`)
       ));
     }
 
-    if (precio_desde) {
-      conditions.push(sql`${products.price} >= ${parseInt(precio_desde) * 100}`);
+    const minPrice = precio_desde ? Number(precio_desde) : null;
+    const maxPrice = precio_hasta ? Number(precio_hasta) : null;
+    if (minPrice !== null && Number.isFinite(minPrice)) {
+      conditions.push(sql`coalesce(${products.priceOffer}, ${products.price}) >= ${Math.round(minPrice * 100)}`);
     }
 
-    if (precio_hasta) {
-      conditions.push(sql`${products.price} <= ${parseInt(precio_hasta) * 100}`);
+    if (maxPrice !== null && Number.isFinite(maxPrice)) {
+      conditions.push(sql`coalesce(${products.priceOffer}, ${products.price}) <= ${Math.round(maxPrice * 100)}`);
+    }
+
+    for (const variantFilter of [color, disfraz, tamano]) {
+      if (variantFilter) {
+        conditions.push(sql`exists (
+          select 1 from product_variants pv
+          where pv.product_id = ${products.id}
+            and pv.is_visible = true
+            and pv.name ilike ${`%${variantFilter}%`}
+        )`);
+      }
     }
 
     let baseQuery = db
@@ -60,17 +87,18 @@ async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
         priceTransfer: products.priceTransfer,
         discount: products.discount,
         badge: products.badge,
-        imageUrl: productImages.url,
+        hasFreeShipping: products.hasFreeShipping,
+         imageUrl: sql<string | null>`(
+           select pi.url from product_images pi
+           where pi.product_id = ${products.id}
+           order by pi.position asc nulls last, pi.id asc
+           limit 1
+         )`,
       })
       .from(products)
-      .leftJoin(productImages, eq(products.id, productImages.productId));
+      .where(and(eq(products.isVisible, true), ...conditions));
 
-    if (conditions.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      baseQuery = baseQuery.where(and(...conditions)) as any;
-    }
-
-    let orderedQuery = baseQuery.groupBy(products.id, productImages.url) as ReturnType<typeof baseQuery.groupBy> as unknown as typeof baseQuery;
+    let orderedQuery = baseQuery as typeof baseQuery;
 
     switch (orden) {
       case 'precio-menor':
@@ -90,14 +118,32 @@ async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
     }
 
     const result = await (orderedQuery as typeof baseQuery).limit(limit).offset(offset);
-    const countResult = await db.select({ count: sql<number>`count(*)` }).from(products);
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(products).where(and(eq(products.isVisible, true), ...conditions));
     const totalProducts = countResult[0]?.count || 0;
     const totalPages = Math.ceil(totalProducts / limit);
 
     // Fetch variants for all products
     const productIds = result.map(p => p.id);
+    const imageRows = productIds.length > 0
+      ? await db.select({ productId: productImages.productId, url: productImages.url })
+        .from(productImages)
+        .where(inArray(productImages.productId, productIds))
+        .orderBy(asc(productImages.position), asc(productImages.id))
+      : [];
+    const imageByProduct = new Map<number, string>();
+    for (const image of imageRows) {
+      if (!imageByProduct.has(image.productId)) imageByProduct.set(image.productId, image.url);
+    }
     const allVariants = productIds.length > 0
-      ? await db.select().from(productVariants).where(inArray(productVariants.productId, productIds))
+      ? await db.select({
+          id: productVariants.id,
+          productId: productVariants.productId,
+          name: productVariants.name,
+          price: productVariants.price,
+          priceOffer: productVariants.priceOffer,
+          optionIds: productVariants.optionIds,
+          stock: sql<number>`greatest(0, coalesce(${productVariants.stock}, 0) - coalesce(${productVariants.reservedStock}, 0))`,
+        }).from(productVariants).where(and(inArray(productVariants.productId, productIds), eq(productVariants.isVisible, true)))
       : [];
 
     // Group variants by product
@@ -111,6 +157,7 @@ async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
 
     const enriched = result.map(p => ({
       ...p,
+      imageUrl: imageByProduct.get(p.id) ?? null,
       variants: variantsByProduct.get(p.id) || [],
     }));
 
@@ -130,39 +177,61 @@ async function getCategories() {
   }
 }
 
-/* ─── Sidebar data hardcodeada (como el original) ─── */
-const COLORS = [
-  { name: 'Rosa', count: 7, hex: '#FFB6C1' },
-  { name: 'Azul', count: 5, hex: '#4169E1' },
-  { name: 'Marrón', count: 5, hex: '#8B4513' },
-  { name: 'Negro', count: 3, hex: '#000000' },
-  { name: 'Beige', count: 3, hex: '#F5F5DC' },
-  { name: 'Blanco', count: 1, hex: '#FFFFFF' },
-  { name: 'Amarillo', count: 2, hex: '#FFD700' },
-  { name: 'Celeste', count: 1, hex: '#87CEEB' },
-];
+type FilterFacet = { name: string; count: number; hex?: string };
 
-const DISFRAZ = [
-  { name: 'Bolsibo!', count: 1 },
-  { name: 'Cocinero', count: 1 },
-  { name: 'Con Mochila Hamburguesa', count: 1 },
-  { name: 'Conejo', count: 1 },
-  { name: 'Cumpleañero', count: 1 },
-  { name: 'Egresado', count: 1 },
-  { name: 'Hamburguesa', count: 1 },
-  { name: 'Patita', count: 1 },
-];
+const COLOR_HEX: Record<string, string> = {
+  rosa: '#FFB6C1', azul: '#4169E1', marrón: '#8B4513', marron: '#8B4513',
+  negro: '#000000', beige: '#F5F5DC', blanco: '#FFFFFF', amarillo: '#FFD700',
+  celeste: '#87CEEB', verde: '#66BB6A', rojo: '#EF5350', gris: '#9E9E9E',
+};
 
-const TAMAÑO = [
-  { name: 'Full', count: 1 },
-  { name: 'King', count: 1 },
-  { name: 'Queen', count: 1 },
-];
+async function getFilterFacets(): Promise<Record<'color' | 'disfraz' | 'tamano', FilterFacet[]>> {
+  try {
+    const rows = await db
+      .select({
+        typeName: variantTypes.name,
+        value: variantOptions.value,
+        count: sql<number>`count(distinct ${productVariants.productId})::int`,
+      })
+      .from(variantOptions)
+      .innerJoin(variantTypes, eq(variantOptions.variantTypeId, variantTypes.id))
+      .innerJoin(productVariants, sql`${variantOptions.id}::text = any(${productVariants.optionIds})`)
+      .innerJoin(products, and(eq(productVariants.productId, products.id), eq(products.isVisible, true)))
+      .where(eq(productVariants.isVisible, true))
+      .groupBy(variantTypes.name, variantOptions.value)
+      .orderBy(variantTypes.name, variantOptions.value);
+
+    const facets: Record<'color' | 'disfraz' | 'tamano', FilterFacet[]> = { color: [], disfraz: [], tamano: [] };
+    for (const row of rows) {
+      const type = row.typeName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const key = type.includes('color') ? 'color' : type.includes('disfraz') ? 'disfraz' : type.includes('taman') || type.includes('talle') ? 'tamano' : null;
+      if (!key) continue;
+      const name = row.value;
+      facets[key].push({ name, count: row.count, ...(key === 'color' ? { hex: COLOR_HEX[name.toLowerCase()] || '#9E9E9E' } : {}) });
+    }
+    return facets;
+  } catch (error) {
+    console.error('Error fetching product filter facets:', error);
+    return { color: [], disfraz: [], tamano: [] };
+  }
+}
 
 export default async function CatalogPage({ searchParams }: CatalogPageProps) {
   const params = await searchParams;
   const { products: productsList, totalPages, currentPage } = await getProducts(params);
   const categoriesList = await getCategories();
+  const facets = await getFilterFacets();
+  const paymentMethods = await getPaymentMethods();
+  const showTransferPayment = paymentMethods.some((method) => method.isActive && method.id === 'transferencia');
+  const buildFilterHref = (key: string, value?: string) => {
+    const next = new URLSearchParams();
+    for (const [param, paramValue] of Object.entries(params)) {
+      if (paramValue && param !== 'page' && param !== key) next.set(param, paramValue);
+    }
+    if (value) next.set(key, value);
+    const query = next.toString();
+    return `/productos/${query ? `?${query}` : ''}`;
+  };
 
   return (
     <>
@@ -181,16 +250,20 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
         <h1 className="catalogo-title text-center mb-6">PRODUCTOS</h1>
 
         {/* Ordenar por */}
-        <div className="catalogo-sort">
-          <span className="catalogo-sort-label">Ordenar por</span>
-          <select className="catalogo-sort-select" defaultValue={params.orden || 'nuevo'}>
+        <form className="catalogo-sort" action="/productos/" method="GET">
+          {Object.entries(params).filter(([key, value]) => key !== 'orden' && key !== 'page' && value).map(([key, value]) => (
+            <input key={key} type="hidden" name={key} value={value} />
+          ))}
+          <label htmlFor="catalogo-orden" className="catalogo-sort-label">Ordenar por</label>
+          <select id="catalogo-orden" name="orden" className="catalogo-sort-select" defaultValue={params.orden || 'nuevo'}>
             <option value="nuevo">Más vendidos</option>
             <option value="precio-menor">Precio: menor a mayor</option>
             <option value="precio-mayor">Precio: mayor a menor</option>
             <option value="nombre-az">A - Z</option>
             <option value="nombre-za">Z - A</option>
           </select>
-        </div>
+          <button type="submit" className="catalogo-price-btn">Aplicar</button>
+        </form>
 
         <div className="catalogo-layout">
           {/* Sidebar */}
@@ -202,8 +275,8 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 {categoriesList.map((cat) => (
                   <li key={cat.id}>
                     <Link
-                      href={`/productos/?q=${cat.slug}`}
-                      className={`catalogo-sidebar-link ${params.q === cat.slug ? 'font-bold text-primary' : ''}`}
+                      href={buildFilterHref('categoria', cat.slug)}
+                      className={`catalogo-sidebar-link ${params.categoria === cat.slug ? 'font-bold text-primary' : ''}`}
                     >
                       {cat.name}
                     </Link>
@@ -220,14 +293,14 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
               <div className="catalogo-filter">
                 <h4 className="catalogo-filter-title">Color</h4>
                 <div className="catalogo-filter-options">
-                  {COLORS.map((color) => (
-                    <label key={color.name} className="catalogo-color-option">
+                  {facets.color.map((color) => (
+                    <Link key={color.name} href={buildFilterHref('color', color.name)} className="catalogo-color-option">
                       <span className="catalogo-color-dot" style={{ backgroundColor: color.hex }} />
                       <span className="catalogo-color-name">{color.name}</span>
                       <span className="catalogo-color-count">({color.count})</span>
-                    </label>
+                    </Link>
                   ))}
-                  <button className="catalogo-filter-more">Ver todos</button>
+                  <Link href={buildFilterHref('color')} className="catalogo-filter-more">Limpiar</Link>
                 </div>
               </div>
 
@@ -235,13 +308,12 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
               <div className="catalogo-filter">
                 <h4 className="catalogo-filter-title">Disfraz</h4>
                 <div className="catalogo-filter-options catalogo-tags">
-                  {DISFRAZ.map((item) => (
-                    <label key={item.name} className="catalogo-tag-option">
-                      <input type="checkbox" className="catalogo-tag-checkbox" />
+                  {facets.disfraz.map((item) => (
+                    <Link key={item.name} href={buildFilterHref('disfraz', item.name)} className="catalogo-tag-option">
                       <span className="catalogo-tag">{item.name} ({item.count})</span>
-                    </label>
+                    </Link>
                   ))}
-                  <button className="catalogo-filter-more">Ver todos</button>
+                  <Link href={buildFilterHref('disfraz')} className="catalogo-filter-more">Limpiar</Link>
                 </div>
               </div>
 
@@ -249,11 +321,10 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
               <div className="catalogo-filter">
                 <h4 className="catalogo-filter-title">Tamaño</h4>
                 <div className="catalogo-filter-options catalogo-tags">
-                  {TAMAÑO.map((item) => (
-                    <label key={item.name} className="catalogo-tag-option">
-                      <input type="checkbox" className="catalogo-tag-checkbox" />
+                  {facets.tamano.map((item) => (
+                    <Link key={item.name} href={buildFilterHref('tamano', item.name)} className="catalogo-tag-option">
                       <span className="catalogo-tag">{item.name} ({item.count})</span>
-                    </label>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -262,6 +333,9 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
               <div className="catalogo-filter">
                 <h4 className="catalogo-filter-title">Precio</h4>
                 <form action="/productos/" method="GET">
+                  {Object.entries(params).filter(([key, value]) => !['precio_desde', 'precio_hasta', 'page'].includes(key) && value).map(([key, value]) => (
+                    <input key={key} type="hidden" name={key} value={value} />
+                  ))}
                   <div className="catalogo-price-filter">
                     <div className="catalogo-price-inputs">
                       <input type="number" name="precio_desde" defaultValue={params.precio_desde} placeholder="Desde" className="catalogo-price-input" />
@@ -286,9 +360,9 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 <a href="/productos/" className="btn btn-primary mt-4">Ver todos</a>
               </div>
             ) : (
-              <div className="products-grid">
+              <div className="products-grid products-grid--masonry">
                 {productsList.map((product) => (
-                  <ProductCard key={product.id} {...product} />
+                  <ProductCard key={product.id} {...product} showTransferPayment={showTransferPayment} masonry />
                 ))}
               </div>
             )}
@@ -297,7 +371,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
             {totalPages > 1 && (
               <div className="catalogo-load-more">
                 {currentPage < totalPages ? (
-                  <Link href={`/productos/?page=${currentPage + 1}`} className="catalogo-load-more-btn">
+                  <Link href={buildFilterHref('page', String(currentPage + 1))} className="catalogo-load-more-btn">
                     MOSTRAR MÁS PRODUCTOS
                   </Link>
                 ) : (

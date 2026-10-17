@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useCartStore } from '@/lib/store';
 import { formatPrice } from '@/lib/utils/format';
+import { getPricePresentation } from '@/lib/products/pricing';
 
 interface Product {
   id: number;
@@ -12,7 +13,7 @@ interface Product {
   price: number;
   priceOffer?: number | null;
   imageUrl: string | null;
-  variants?: Array<{ id: number; name: string; price?: number | null }>;
+  variants?: Array<{ id: number; name: string; price?: number | null; priceOffer?: number | null }>;
 }
 
 interface QuickShopModalProps {
@@ -67,7 +68,7 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
 
   const handleAddToCart = () => {
     const variant = product.variants?.find(v => v.id === selectedVariant);
-    const finalPrice = variant?.price || product.priceOffer || product.price;
+    const finalPrice = getPricePresentation({ regularPrice: product.price, offerPrice: product.priceOffer, variantRegularPrice: variant?.price, variantOfferPrice: variant?.priceOffer }).finalPrice ?? 0;
 
     addItem({
       id: product.id,
@@ -76,6 +77,7 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
       price: finalPrice,
       imageUrl: product.imageUrl,
       variant: variant?.name,
+      variantId: selectedVariant,
       quantity,
     });
 
@@ -85,9 +87,9 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
     }, 1500);
   };
 
-  const finalPrice = product.variants?.find(v => v.id === selectedVariant)?.price
-    || product.priceOffer
-    || product.price;
+  const selectedVariantData = product.variants?.find(v => v.id === selectedVariant);
+  const presentation = getPricePresentation({ regularPrice: product.price, offerPrice: product.priceOffer, variantRegularPrice: selectedVariantData?.price, variantOfferPrice: selectedVariantData?.priceOffer });
+  const finalPrice = presentation.finalPrice ?? 0;
 
   return (
     <div className="quickshop-overlay" onClick={onClose}>
@@ -117,9 +119,9 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
             <h3 className="quickshop-title">{product.name}</h3>
 
             <div className="quickshop-price">
-              {product.priceOffer ? (
+              {presentation.isOnSale ? (
                 <>
-                  <span className="quickshop-price-original">{formatPrice(product.price)}</span>
+                  <span className="quickshop-price-original">{formatPrice(presentation.regularPrice ?? product.price)}</span>
                   <span className="quickshop-price-offer">{formatPrice(finalPrice)}</span>
                 </>
               ) : (

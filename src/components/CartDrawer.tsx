@@ -5,10 +5,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, removeItem, getTotal } = useCartStore();
+  const { items, isOpen, closeCart, removeItem, updateQuantity, getTotal } = useCartStore();
 
   const formatPrice = (amount: number) => {
-    return `$${amount.toLocaleString('es-AR')}`;
+    return `$${(amount / 100).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   };
 
   if (!isOpen) return null;
@@ -17,12 +17,12 @@ export default function CartDrawer() {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 z-50 transition-opacity"
+        className="fixed inset-0 bg-black/40 z-[101] transition-opacity"
         onClick={closeCart}
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col">
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-[101] shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h2 className="text-base font-bold tracking-widest uppercase">Carrito de compras</h2>
@@ -78,13 +78,22 @@ export default function CartDrawer() {
                       <p className="text-sm font-bold mt-1 text-primary">
                         {formatPrice(item.price)}
                       </p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="text-xs text-gray-500">x{item.quantity}</span>
+                      {/* Quantity stepper */}
+                      <div className="flex items-center gap-2 mt-2">
                         <button
-                          onClick={() => removeItem(item.id, item.variant)}
-                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                          onClick={() => updateQuantity(item.id, item.quantity - 1, item.variant)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors text-sm font-bold"
+                          aria-label="Disminuir cantidad"
                         >
-                          Eliminar
+                          −
+                        </button>
+                        <span className="text-sm font-bold min-w-[24px] text-center">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant)}
+                          className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors text-sm font-bold"
+                          aria-label="Aumentar cantidad"
+                        >
+                          +
                         </button>
                       </div>
                     </div>

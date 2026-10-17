@@ -1,7 +1,53 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
+import { useEffect, useState } from 'react';
+
+type FooterSettings = {
+  footerCopyrightText: string;
+  footerConsumerEnabled: boolean;
+  footerConsumerText: string;
+  footerConsumerUrl: string;
+  footerMadeInEnabled: boolean;
+  footerMadeWithText: string;
+  footerMadeInText: string;
+  paymentMethods: Array<{ id: string; name: string; logoUrl: string | null; position: number }>;
+  shippingMethods: Array<{ id: number; code: string; name: string; carrier: string; estimatedDays: string | null; position: number }>;
+};
+
+const DEFAULT_SETTINGS: FooterSettings = {
+  footerCopyrightText: 'Copyright Tendencia Shop - 20323692352 - 2026.',
+  footerConsumerEnabled: true,
+  footerConsumerText: 'Defensa del consumidor',
+  footerConsumerUrl: 'https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario',
+  footerMadeInEnabled: true,
+  footerMadeWithText: 'Hecho con',
+  footerMadeInText: 'en Tucumán',
+  paymentMethods: [],
+  shippingMethods: [],
+};
 
 export default function Footer() {
+  const [settings, setSettings] = useState<FooterSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    fetch('/api/store-settings')
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('No se pudo cargar el footer')))
+      .then((data) => setSettings({
+        footerCopyrightText: typeof data.footerCopyrightText === 'string' ? data.footerCopyrightText : DEFAULT_SETTINGS.footerCopyrightText,
+        footerConsumerEnabled: data.footerConsumerEnabled !== false,
+        footerConsumerText: typeof data.footerConsumerText === 'string' ? data.footerConsumerText : DEFAULT_SETTINGS.footerConsumerText,
+        footerConsumerUrl: typeof data.footerConsumerUrl === 'string' ? data.footerConsumerUrl : DEFAULT_SETTINGS.footerConsumerUrl,
+        footerMadeInEnabled: data.footerMadeInEnabled !== false,
+        footerMadeWithText: typeof data.footerMadeWithText === 'string' ? data.footerMadeWithText : DEFAULT_SETTINGS.footerMadeWithText,
+        footerMadeInText: typeof data.footerMadeInText === 'string' ? data.footerMadeInText : DEFAULT_SETTINGS.footerMadeInText,
+        paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
+        shippingMethods: Array.isArray(data.shippingMethods) ? data.shippingMethods : [],
+      }))
+      .catch(() => undefined);
+  }, []);
+
   return (
     <>
       {/* Footer principal */}
@@ -32,53 +78,36 @@ export default function Footer() {
 
             {/* Medios de pago y envío */}
             <div>
-              <h4 className="footer-title">Medios de pago</h4>
-              <div className="footer-payment-icons">
-                <Image
-                  src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/payment/new_logos_payment/visa@2x.png"
-                  alt="Visa"
-                  width={48}
-                  height={30}
-                  className="footer-payment-icon"
-                />
-                <Image
-                  src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/payment/new_logos_payment/mastercard@2x.png"
-                  alt="Mastercard"
-                  width={48}
-                  height={30}
-                  className="footer-payment-icon"
-                />
-                <Image
-                  src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/payment/new_logos_payment/amex@2x.png"
-                  alt="Amex"
-                  width={48}
-                  height={30}
-                  className="footer-payment-icon"
-                />
-                <Image
-                  src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/payment/new_logos_payment/ar/cabal@2x.png"
-                  alt="Cabal"
-                  width={48}
-                  height={30}
-                  className="footer-payment-icon"
-                />
-                <Image
-                  src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/payment/new_logos_payment/ar/nativa@2x.png"
-                  alt="Nativa"
-                  width={48}
-                  height={30}
-                  className="footer-payment-icon"
-                />
-              </div>
+              {settings.paymentMethods.length > 0 && <>
+                <h4 className="footer-title">Medios de pago</h4>
+                <div className="footer-payment-icons">
+                  {settings.paymentMethods.map((method) => method.logoUrl ? (
+                    <Image
+                      key={method.id}
+                      src={method.logoUrl}
+                      alt={method.name}
+                      width={48}
+                      height={30}
+                      className="footer-payment-icon"
+                    />
+                  ) : (
+                    <span key={method.id} className="footer-payment-icon">{method.name}</span>
+                  ))}
+                </div>
+              </>}
 
-              <h4 className="footer-title">Formas de envío</h4>
-              <Image
-                src="https://d26lpennugtm8s.cloudfront.net/assets/common/img/logos/shipping/api/9075@2x.png"
-                alt="Andreani"
-                width={80}
-                height={30}
-                className="footer-shipping-icon"
-              />
+              {settings.shippingMethods.length > 0 && (
+                <>
+                  <h4 className="footer-title">Formas de envío</h4>
+                  <div className="footer-shipping-methods">
+                    {settings.shippingMethods.map((method) => (
+                      <span key={method.id} className="footer-shipping-method">
+                        {method.name}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Contacto */}
@@ -117,25 +146,17 @@ export default function Footer() {
         <div className="container">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-center md:text-left">
-              <p className="text-sm text-gray-500">
-                Copyright Tendencia Shop - 20323692352 - 2026.
-              </p>
-              <a
-                href="https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-gray-500 hover:text-primary transition-colors"
-              >
-                Defensa del consumidor
-              </a>
+              <p className="text-sm text-gray-500">{settings.footerCopyrightText}</p>
+              {settings.footerConsumerEnabled && (
+                <a href={settings.footerConsumerUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-gray-500 hover:text-primary transition-colors">
+                  {settings.footerConsumerText}
+                </a>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <span>Hecho con</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-              </svg>
-              <span>en Tucumán</span>
-            </div>
+            {settings.footerMadeInEnabled && <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span>{settings.footerMadeWithText}</span>
+              <span>{settings.footerMadeInText}</span>
+            </div>}
           </div>
         </div>
       </div>
