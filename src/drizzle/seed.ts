@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { categories, products, productVariants, productImages, categoryProducts } from './schema';
+import { categories, products, productVariants, productImages, productCategories } from './schema';
 
 const connectionString = process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5434/tienda_nube';
 
@@ -11,7 +11,7 @@ async function seed() {
   console.log('🌱 Seeding database...');
 
   // Limpiar tablas en orden correcto (respetando foreign keys)
-  await db.delete(categoryProducts);
+  await db.delete(productCategories);
   await db.delete(productVariants);
   await db.delete(productImages);
   await db.delete(products);
@@ -46,7 +46,7 @@ async function seed() {
   // ──────────────────────────────────────────────────────
   // Products (20 productos reales)
   // ──────────────────────────────────────────────────────
-  const insertedProducts = await db.insert(products).values([
+  const productSeedData = [
     {
       name: 'Taza de Café automática',
       slug: 'taza-de-cafe-automatica',
@@ -205,7 +205,10 @@ async function seed() {
       discount: '22%',
       categoryId: escolar.id,
     },
-  ]).returning();
+  ];
+  const insertedProducts = await db.insert(products).values(
+    productSeedData.map(({ categoryId: _categoryId, ...product }) => product)
+  ).returning();
 
   console.log('✅ Products inserted:', insertedProducts.length);
 
@@ -278,16 +281,14 @@ async function seed() {
   console.log('✅ Product variants inserted');
 
   // ──────────────────────────────────────────────────────
-  // Category Products
+  // Product Categories
   // ──────────────────────────────────────────────────────
-  for (const product of insertedProducts) {
-    if (product.categoryId) {
-      await db.insert(categoryProducts).values({
-        categoryId: product.categoryId,
-        productId: product.id,
-      });
-    }
-  }
+  await db.insert(productCategories).values(
+    insertedProducts.map((product, index) => ({
+      productId: product.id,
+      categoryId: productSeedData[index].categoryId,
+    }))
+  );
 
   console.log('✅ Category products inserted');
 

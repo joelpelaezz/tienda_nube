@@ -8,6 +8,104 @@
       "when": 1787109457971,
       "tag": "0000_romantic_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787882400000,
+      "tag": "0001_add_stock_movements",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788011560919,
+      "tag": "0002_left_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788012000000,
+      "tag": "0003_add_variant_id_to_order_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0004_add_contact_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792001000000,
+      "tag": "0005_add_newsletter_subscribers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792002000000,
+      "tag": "0006_add_shipping_configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792003000000,
+      "tag": "0007_add_variant_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792004000000,
+      "tag": "0008_backfill_variant_type_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792005000000,
+      "tag": "0009_backfill_variant_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792006000000,
+      "tag": "0010_add_category_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792007000000,
+      "tag": "0011_migrate_product_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792008000000,
+      "tag": "0012_add_product_free_shipping",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792009000000,
+      "tag": "0013_add_communication_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792010000000,
+      "tag": "0014_add_variant_offer_price",
+      "breakpoints": true
     }
   ]
 }

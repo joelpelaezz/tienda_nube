@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, index, jsonb } from 'drizzle-orm/pg-core';
 
 // ──────────────────────────────────────────────────────
 // NextAuth.js Tables
@@ -52,6 +52,7 @@ export const categories = pgTable('categories', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   parentId: integer('parent_id'),
+  position: integer('position').notNull().default(0),
 });
 
 // ──────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ export const products = pgTable('products', {
   priceTransfer: integer('price_transfer'),
   discount: text('discount'),
   badge: text('badge'),
-  categoryId: integer('category_id'),
+  hasFreeShipping: boolean('has_free_shipping').notNull().default(false),
   isVisible: boolean('is_visible').default(true),
   // Shipping / physical
   weight: integer('weight'),          // grams
@@ -124,7 +125,10 @@ export const productVariants = pgTable('product_variants', {
   productId: integer('product_id').notNull(),
   name: text('name').notNull(),
   price: integer('price'),
+  priceOffer: integer('price_offer'),
+  imageUrl: text('image_url'),
   stock: integer('stock').default(0),
+  reservedStock: integer('reserved_stock').default(0),  // Stock locked by pending orders
   optionIds: text('option_ids').array(),
   variantTypeId: integer('variant_type_id').references(() => variantTypes.id),
   // Per-variant shipping
@@ -139,6 +143,22 @@ export const productVariants = pgTable('product_variants', {
 });
 
 // ──────────────────────────────────────────────────────
+// Stock Movements
+// ──────────────────────────────────────────────────────
+export const stockMovements = pgTable('stock_movements', {
+  id: serial('id').primaryKey(),
+  variantId: integer('variant_id').notNull().references(() => productVariants.id, { onDelete: 'cascade' }),
+  movementType: text('movement_type').notNull(), // creacion | restock | venta | cancelacion | ajuste
+  quantity: integer('quantity').notNull(),
+  stockAfter: integer('stock_after').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  createdBy: integer('created_by').references(() => users.id),
+}, (table) => ({
+  variantIdIdx: index('stock_movements_variant_id_idx').on(table.variantId),
+  createdAtIdx: index('stock_movements_created_at_idx').on(table.createdAt),
+}));
+
+// ──────────────────────────────────────────────────────
 // Product Images
 // ──────────────────────────────────────────────────────
 export const productImages = pgTable('product_images', {
@@ -149,16 +169,6 @@ export const productImages = pgTable('product_images', {
   position: integer('position').notNull().default(0),
   src: text('src').default('url'), // 'url' | 'file'
 });
-
-// ──────────────────────────────────────────────────────
-// Category Products (muchos a muchos)
-// ──────────────────────────────────────────────────────
-export const categoryProducts = pgTable('category_products', {
-  categoryId: integer('category_id').notNull(),
-  productId: integer('product_id').notNull(),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.categoryId, t.productId] }),
-}));
 
 // ──────────────────────────────────────────────────────
 // Customers
@@ -185,6 +195,9 @@ export const orders = pgTable('orders', {
   discount: integer('discount').default(0),  // discount applied in cents
   couponCode: text('coupon_code'),
   notes: text('notes'),
+  postalCode: text('postal_code'),
+  shippingMethod: text('shipping_method'),
+  shippingCost: integer('shipping_cost').default(0),
   mpPaymentId: text('mp_payment_id'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -196,6 +209,85 @@ export const orders = pgTable('orders', {
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),  // e.g. 'payment_mp_enabled'
   value: text('value').notNull(), // stored as string, parsed by consumer
+});
+
+export const contactMessages = pgTable('contact_messages', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  message: text('message').notNull(),
+  status: text('status').notNull().default('new'),
+  ipHash: text('ip_hash'),
+  createdAt: timestamp('created_at').defaultNow(),
+  readAt: timestamp('read_at'),
+  repliedAt: timestamp('replied_at'),
+});
+
+export const newsletterSubscribers = pgTable('newsletter_subscribers', {
+  id: serial('id').primaryKey(),
+  name: text('name'),
+  email: text('email').notNull().unique(),
+  status: text('status').notNull().default('subscribed'),
+  source: text('source').notNull().default('homepage'),
+  consentAt: timestamp('consent_at').defaultNow(),
+  subscribedAt: timestamp('subscribed_at').defaultNow(),
+  unsubscribedAt: timestamp('unsubscribed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const communicationEvents = pgTable('communication_events', {
+  id: serial('id').primaryKey(),
+  channel: text('channel').notNull(), // whatsapp | contact | newsletter
+  eventType: text('event_type').notNull(), // click | submitted
+  name: text('name'),
+  email: text('email'),
+  phone: text('phone'),
+  source: text('source').notNull().default('unknown'),
+  productId: integer('product_id'),
+  orderId: integer('order_id'),
+  href: text('href'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ──────────────────────────────────────────────────────
+// Payment Methods
+// ──────────────────────────────────────────────────────
+export const paymentMethods = pgTable('payment_methods', {
+  id: text('id').primaryKey(),           // 'visa', 'mastercard', 'mercadopago', etc.
+  name: text('name').notNull(),          // 'Visa', 'Mercado Pago'
+  type: text('type').notNull(),          // 'card_credit' | 'card_debit' | 'gateway' | 'bank_transfer' | 'cash'
+  isActive: boolean('is_active').default(false),
+  discountPercent: integer('discount_percent'),  // null = sin descuento
+  logoUrl: text('logo_url'),            // null = usar emoji/placeholder
+  position: integer('position').default(0),
+});
+
+export const shippingMethods = pgTable('shipping_methods', {
+  id: serial('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  carrier: text('carrier').notNull().default('rules'),
+  baseCost: integer('base_cost').notNull().default(0),
+  freeFrom: integer('free_from'),
+  estimatedDays: text('estimated_days'),
+  isActive: boolean('is_active').notNull().default(false),
+  position: integer('position').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const shippingRules = pgTable('shipping_rules', {
+  id: serial('id').primaryKey(),
+  shippingMethodId: integer('shipping_method_id').notNull().references(() => shippingMethods.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  postalPrefix: text('postal_prefix').notNull().default(''),
+  cost: integer('cost').notNull().default(0),
+  freeFrom: integer('free_from'),
+  estimatedDays: text('estimated_days'),
+  isActive: boolean('is_active').notNull().default(true),
+  position: integer('position').notNull().default(0),
 });
 
 export type SettingKey = typeof settings.$inferSelect['key'];
@@ -224,6 +316,7 @@ export const orderItems = pgTable('order_items', {
   id: serial('id').primaryKey(),
   orderId: integer('order_id').notNull(),
   productId: integer('product_id'),
+  variantId: integer('variant_id'),  // NEW: references productVariants.id
   productName: text('product_name').notNull(),
   quantity: integer('quantity').notNull().default(1),
   unitPrice: integer('unit_price').notNull(),
