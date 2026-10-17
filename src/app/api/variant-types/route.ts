@@ -8,11 +8,13 @@ export async function GET() {
   const types = await db
     .select()
     .from(variantTypes)
+    .where(eq(variantTypes.isActive, true))
     .orderBy(asc(variantTypes.position));
 
   const options = await db
     .select()
     .from(variantOptions)
+    .where(eq(variantOptions.isActive, true))
     .orderBy(asc(variantOptions.position));
 
   const result = types.map((type) => ({
@@ -32,24 +34,47 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { name, optionValues } = body as { name: string; optionValues: string[] };
+    const { name, optionValues, kind = 'custom', presentation = 'text' } = body as {
+      name: string;
+      optionValues: Array<string | { value: string; colorHex?: string; imageUrl?: string }>;
+      kind?: 'system' | 'custom';
+      presentation?: 'text' | 'color' | 'image';
+    };
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Nombre requerido' }, { status: 400 });
     }
 
+    if (!['system', 'custom'].includes(kind)) {
+      return NextResponse.json({ error: 'Tipo de propiedad inválido' }, { status: 400 });
+    }
+
+    if (!['text', 'color', 'image'].includes(presentation)) {
+      return NextResponse.json({ error: 'Presentación inválida' }, { status: 400 });
+    }
+
     // Create the variant type
-    const [vt] = await db.insert(variantTypes).values({ name: name.trim() }).returning();
+    const [vt] = await db.insert(variantTypes).values({
+      name: name.trim(),
+      kind,
+      presentation,
+    }).returning();
 
     // Create options if provided
     const createdOptions: typeof variantOptions.$inferSelect[] = [];
     if (optionValues && Array.isArray(optionValues) && optionValues.length > 0) {
       const optionRows = optionValues
-        .map((v) => v.trim())
-        .filter((v) => v.length > 0)
-        .map((value, idx) => ({
+        .map((option) => typeof option === 'string' ? { value: option } : option)
+        .map((option) => ({
+          ...option,
+          value: option.value.trim(),
+        }))
+        .filter((option) => option.value.length > 0)
+        .map((option, idx) => ({
           variantTypeId: vt.id,
-          value,
+          value: option.value,
+          colorHex: option.colorHex || null,
+          imageUrl: option.imageUrl || null,
           position: idx,
         }));
       if (optionRows.length > 0) {

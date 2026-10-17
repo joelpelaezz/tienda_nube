@@ -102,6 +102,9 @@ export const products = pgTable('products', {
 export const variantTypes = pgTable('variant_types', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
+  kind: text('kind').notNull().default('custom'), // system | custom
+  presentation: text('presentation').notNull().default('text'), // text | color | image
+  isActive: boolean('is_active').notNull().default(true),
   position: integer('position').default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });
@@ -113,6 +116,9 @@ export const variantOptions = pgTable('variant_options', {
   id: serial('id').primaryKey(),
   variantTypeId: integer('variant_type_id').notNull().references(() => variantTypes.id, { onDelete: 'cascade' }),
   value: text('value').notNull(),
+  colorHex: text('color_hex'),
+  imageUrl: text('image_url'),
+  isActive: boolean('is_active').notNull().default(true),
   position: integer('position').default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });

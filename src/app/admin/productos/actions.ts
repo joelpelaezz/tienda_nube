@@ -412,18 +412,24 @@ export async function deleteMultipleImages(imageIds: number[], productId: number
 // ─────────────────────────────────────────────────────────────
 // Variant Types
 // ─────────────────────────────────────────────────────────────
-export async function createVariantType(name: string, optionValues: string[]) {
+export async function createVariantType(
+  name: string,
+  optionValues: Array<string | { value: string; colorHex?: string; imageUrl?: string }>,
+  presentation: 'text' | 'color' | 'image' = 'text',
+) {
   // C4-TRACE: Phase 1 — admin-only mutation.
   await requireAdmin();
 
   // Create the variant type
-  const [vt] = await db.insert(variantTypes).values({ name }).returning();
+  const [vt] = await db.insert(variantTypes).values({ name, presentation }).returning();
 
   // Create all options
   if (optionValues.length > 0) {
-    const optionRows = optionValues.map((value) => ({
+    const optionRows = optionValues.map((option) => ({
       variantTypeId: vt.id,
-      value: value.trim(),
+      value: typeof option === 'string' ? option.trim() : option.value.trim(),
+      colorHex: typeof option === 'string' ? null : option.colorHex || null,
+      imageUrl: typeof option === 'string' ? null : option.imageUrl || null,
     }));
     await db.insert(variantOptions).values(optionRows);
   }
