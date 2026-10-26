@@ -13,15 +13,20 @@ export interface ProductCardData {
   priceTransfer?: number | null;
   discount?: string | null;
   badge?: string | null;
+  hasFreeShipping?: boolean;
+  availableStock?: number | null;
+  productType?: string | null;
   imageUrl: string | null;
+  imageAlt?: string | null;
   variants?: ProductVariant[];
 }
 
 /** Full product detail data */
 export interface ProductDetailData extends ProductCardData {
   description?: string | null;
-  categoryId?: number | null;
   categoryName?: string | null;
+  stock: number;
+  reservedStock: number;
 }
 
 /** Product variant */
@@ -30,7 +35,10 @@ export interface ProductVariant {
   productId: number;
   name: string;
   price?: number | null;
+  priceOffer?: number | null;
   stock?: number | null;
+  colorName?: string | null;
+  colorHex?: string | null;
 }
 
 /** Category */
@@ -45,6 +53,8 @@ export interface Category {
 export interface CartItem extends ProductCardData {
   quantity: number;
   variant?: string;
+  variantId?: number | null;
+  availableStock?: number | null;
 }
 
 /** Price formatting options */

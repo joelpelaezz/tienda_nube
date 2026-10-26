@@ -7,7 +7,8 @@ import { useCartStore, useQuickShopStore } from '@/lib/store';
 import { formatPrice } from '@/lib/utils/format';
 import type { ProductCardData, ProductVariant } from '@/types/product';
 import { getVariantColor } from '@/lib/colors';
-import { getPricePresentation } from '@/lib/products/pricing';
+import { getDiscountPercent, getPricePresentation, isSellablePrice } from '@/lib/products/pricing';
+import TrackedWhatsAppLink from '@/components/TrackedWhatsAppLink';
 
 // Map variant names to approximate hex colors
 function isAllOutOfStock(variants: ProductVariant[], stockMap?: Record<number, number>): boolean {
@@ -26,15 +27,17 @@ export default function ProductCard({
   price,
   priceOffer,
   priceTransfer,
-  discount,
   badge,
   hasFreeShipping,
   imageUrl,
   variants = [],
+  availableStock,
+  productType = 'physical',
   stockMap,  // optional: variantId -> available stock
   showTransferPayment = false,
   masonry = false,
-}: ProductCardData & { stockMap?: Record<number, number>; showTransferPayment?: boolean; masonry?: boolean }) {
+  whatsappNumber = '',
+}: ProductCardData & { stockMap?: Record<number, number>; showTransferPayment?: boolean; masonry?: boolean; whatsappNumber?: string }) {
   const addItem = useCartStore((s) => s.addItem);
   const openQuickShop = useQuickShopStore((s) => s.openQuickShop);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -71,22 +74,56 @@ export default function ProductCard({
     };
   }, [masonry]);
 
-  const outOfStock = isAllOutOfStock(variants, stockMap);
+  const tracksStock = productType !== 'digital';
+  const outOfStock = tracksStock && (variants.length > 0
+    ? isAllOutOfStock(variants, stockMap)
+    : availableStock === 0);
+  const requiresVariantSelection = variants.length > 0 && selectedVariant === null;
+  const uniqueColorCount = new Set(
+    variants.map((variant) => variant.colorName?.trim().toLocaleLowerCase('es')).filter(Boolean)
+  ).size;
+  const variantBadgeLabel = uniqueColorCount > 0
+    ? `${uniqueColorCount} colores`
+    : `${variants.length} variantes`;
+  const getVariantPresentation = (variant?: ProductVariant | null) => getPricePresentation({
+    regularPrice: price,
+    offerPrice: priceOffer,
+    transferPrice: priceTransfer,
+    variantRegularPrice: variant?.price,
+    variantOfferPrice: variant?.priceOffer,
+  });
+  const availableVariantPresentations = variants
+    .filter((variant) => !tracksStock || (stockMap?.[variant.id] ?? variant.stock ?? 0) > 0)
+    .map((variant) => ({ variant, presentation: getVariantPresentation(variant) }))
+    .filter(({ presentation }) => (presentation.finalPrice ?? 0) > 0)
+    .sort((a, b) => (a.presentation.finalPrice ?? 0) - (b.presentation.finalPrice ?? 0));
+  const startingVariantPresentation = availableVariantPresentations[0]?.presentation ?? null;
+  const displayedPresentation = selectedVariant
+    ? getVariantPresentation(selectedVariant)
+    : price != null
+      ? getVariantPresentation()
+      : startingVariantPresentation;
+  const showStartingPrice = price == null && selectedVariant == null && startingVariantPresentation != null;
+  // C4-TRACE: card prices, quick-add, and consultation CTA share the sellable-price predicate.
+  const displayedHasPrice = isSellablePrice(displayedPresentation?.finalPrice);
+  const hasCardPrice = selectedVariant
+    ? displayedHasPrice
+    : displayedHasPrice || startingVariantPresentation != null;
+  const selectedVariantHasPrice = selectedVariant != null && (getVariantPresentation(selectedVariant).finalPrice ?? 0) > 0;
   const visibleVariants = variants.slice(0, 4);
   const remainingVariantCount = Math.max(0, variants.length - visibleVariants.length);
+  const normalizedWhatsappNumber = whatsappNumber.replace(/\D/g, '');
+  const consultationMessage = `Hola, quiero consultar el precio de ${name}${selectedVariant ? `, variante ${selectedVariant.name}` : ''}.`;
+  const consultationHref = normalizedWhatsappNumber
+    ? `https://wa.me/${normalizedWhatsappNumber}?text=${encodeURIComponent(consultationMessage)}`
+    : `/contacto?producto=${encodeURIComponent(slug)}&variante=${encodeURIComponent(selectedVariant?.name ?? '')}`;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (outOfStock) return;
-    const finalPrice = getPricePresentation({
-      regularPrice: price,
-      offerPrice: priceOffer,
-      transferPrice: priceTransfer,
-      variantRegularPrice: selectedVariant?.price,
-      variantOfferPrice: selectedVariant?.priceOffer,
-    }).finalPrice;
-    if (finalPrice != null) {
+    if (outOfStock || requiresVariantSelection) return;
+    const finalPrice = getVariantPresentation(selectedVariant).finalPrice;
+    if (finalPrice != null && finalPrice > 0) {
       addItem({
         id,
         slug,
@@ -95,6 +132,8 @@ export default function ProductCard({
         imageUrl,
         variant: selectedVariant?.name,
         variantId: selectedVariant?.id,
+        transferPrice: selectedVariant ? null : priceTransfer ?? null,
+        availableStock: !tracksStock ? null : selectedVariant?.stock ?? availableStock ?? null,
       });
       setJustAdded(true);
       window.setTimeout(() => setJustAdded(false), 1400);
@@ -109,9 +148,21 @@ export default function ProductCard({
       name,
       slug,
        price: price || 0,
-      priceOffer,
-      imageUrl,
-       variants: variants.map(v => ({ id: v.id, name: v.name, price: v.price, priceOffer: v.priceOffer })),
+       priceOffer,
+        transferPrice: priceTransfer,
+       imageUrl,
+       availableStock,
+       productType,
+       whatsappNumber,
+       variants: variants.map(v => ({
+         id: v.id,
+         name: v.name,
+         price: v.price,
+         priceOffer: v.priceOffer,
+         stock: stockMap?.[v.id] ?? v.stock ?? null,
+         colorName: v.colorName,
+         colorHex: v.colorHex,
+       })),
     });
   };
 
@@ -161,14 +212,14 @@ export default function ProductCard({
           )}
           {variants.length > 0 && (
             <span className="product-card-colors-badge">
-              {variants.length} colores
+              {variantBadgeLabel}
             </span>
           )}
           {outOfStock && (
             <span className="product-card-agotado-badge">AGOTADO</span>
           )}
           {/* Quick add button */}
-          {price !== null && !outOfStock && (
+          {hasCardPrice && !outOfStock && (
             <button
               className="product-card-quick-add"
               onClick={handleQuickAdd}
@@ -207,12 +258,12 @@ export default function ProductCard({
             <div className="product-card-variants">
               {visibleVariants.map((v) => {
                 const variantStock = stockMap ? (stockMap[v.id] ?? -1) : (v.stock ?? -1);
-                const variantOutOfStock = variantStock === 0;
+                const variantOutOfStock = tracksStock && variantStock === 0;
                 return (
                   <button
                     key={v.id}
                     className={`product-card-swatch ${selectedVariant?.id === v.id ? 'product-card-swatch-active' : ''} ${variantOutOfStock ? 'product-card-swatch-agotado' : ''}`}
-                    style={{ backgroundColor: getVariantColor(v.name) }}
+                    style={{ backgroundColor: v.colorHex || getVariantColor(v.colorName || v.name.split('/')[0].trim()) }}
                     title={variantOutOfStock ? `${v.name} - Agotado` : v.name}
                     onClick={(e) => {
                       e.preventDefault();
@@ -231,59 +282,60 @@ export default function ProductCard({
             </div>
           )}
 
-           {price !== null ? (() => {
-             const presentation = getPricePresentation({
-               regularPrice: price,
-               offerPrice: priceOffer,
-               transferPrice: priceTransfer,
-               variantRegularPrice: selectedVariant?.price,
-               variantOfferPrice: selectedVariant?.priceOffer,
-             });
-             return presentation.finalPrice != null ? (
+           {displayedHasPrice && displayedPresentation ? (
              <>
-               {presentation.isOnSale ? (
-                 <>
-            <div className="product-card-price-row product-card-price-transition">
-                     <span className="product-card-price-original">
-                       {formatPrice(presentation.regularPrice ?? price)}
-                    </span>
-                    {discount && (
-                      <span className="product-card-discount-text">{discount} OFF</span>
-                    )}
-                  </div>
-                  <div className="product-card-price product-card-price-offer product-card-price-transition">
-                     {formatPrice(presentation.finalPrice)}
-                  </div>
-                </>
-              ) : (
-                  <div className="product-card-price product-card-price-transition">{formatPrice(presentation.finalPrice)}</div>
-              )}
-              {priceTransfer && showTransferPayment && (
-                <div className="product-card-transfer">
-                  <span className="product-card-transfer-price">{formatPrice(priceTransfer)}</span>
-                  <span className="product-card-transfer-label">Transferencia o depósito</span>
-                </div>
-              )}
+               {showStartingPrice && <div className="product-card-price-from">Desde</div>}
+                {displayedPresentation.isOnSale && displayedPresentation.regularPrice != null && displayedPresentation.regularPrice > 0 && (
+                 <div className="product-card-price-row product-card-price-transition">
+                   <span className="product-card-price-original">{formatPrice(displayedPresentation.regularPrice)}</span>
+                   {getDiscountPercent(displayedPresentation.regularPrice, displayedPresentation.finalPrice) != null && (
+                     <span className="product-card-discount-text">
+                       {getDiscountPercent(displayedPresentation.regularPrice, displayedPresentation.finalPrice)} OFF
+                     </span>
+                   )}
+                 </div>
+               )}
+               <div className={`product-card-price product-card-price-transition ${displayedPresentation.isOnSale ? 'product-card-price-offer' : ''}`}>
+                 {formatPrice(displayedPresentation.finalPrice)}
+               </div>
+               {priceTransfer && price != null && showTransferPayment && (
+                 <div className="product-card-transfer">
+                   <span className="product-card-transfer-price">{formatPrice(priceTransfer)}</span>
+                   <span className="product-card-transfer-label">Transferencia o depósito</span>
+                 </div>
+               )}
              </>
-             ) : (
-               <div className="product-card-price text-gray-500">Consultar precio</div>
-             );
-           })() : (
-            <div className="product-card-price text-gray-500">Consultar precio</div>
-          )}
+           ) : (
+             <div className="product-card-price text-gray-500">
+                {!displayedHasPrice ? 'Consultar precio' : 'Sin stock'}
+             </div>
+           )}
         </div>
       </Link>
-      {price !== null && (
-        <div className="product-card-actions">
-          <button
-            onClick={handleAddToCart}
-            className={`product-card-add-btn ${outOfStock ? 'product-card-add-btn-agotado' : ''}`}
-            disabled={outOfStock}
-          >
-             {outOfStock ? 'AGOTADO' : justAdded ? '✓ AGREGADO' : 'AGREGAR AL CARRITO'}
-          </button>
-        </div>
-      )}
+       {(hasCardPrice || !displayedHasPrice) && (
+         <div className="product-card-actions">
+           {!displayedHasPrice ? (
+             <TrackedWhatsAppLink
+               href={consultationHref}
+               className="product-card-add-btn product-card-consult-btn"
+               target="_blank"
+               rel="noopener noreferrer"
+               source="price-consultation-product-card"
+               productId={id}
+             >
+               {normalizedWhatsappNumber ? 'CONSULTAR POR WHATSAPP' : 'CONSULTAR PRECIO'}
+             </TrackedWhatsAppLink>
+           ) : (
+             <button
+               onClick={handleAddToCart}
+               className={`product-card-add-btn ${outOfStock ? 'product-card-add-btn-agotado' : ''}`}
+               disabled={outOfStock || requiresVariantSelection || (selectedVariant !== null && !selectedVariantHasPrice)}
+             >
+               {outOfStock ? 'AGOTADO' : requiresVariantSelection ? 'ELEGÍ UNA VARIANTE' : selectedVariant !== null && !selectedVariantHasPrice ? 'SIN PRECIO' : justAdded ? '✓ AGREGADO' : 'AGREGAR AL CARRITO'}
+             </button>
+           )}
+         </div>
+       )}
     </div>
   );
 }

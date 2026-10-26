@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -80,9 +81,12 @@ export default function RegisterPage() {
       <div className="auth-card">
         {/* Logo */}
         <div className="auth-header">
-          <img
+          <Image
             src="https://static-c4-1.s3.amazonaws.com/assets/img/logos/elcuatro-dark-297x48.png"
             alt="Mi Tienda"
+            width={297}
+            height={48}
+            unoptimized
             className="auth-logo"
           />
           <h1 className="auth-title">Crear cuenta</h1>

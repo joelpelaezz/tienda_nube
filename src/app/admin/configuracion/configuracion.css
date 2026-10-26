@@ -1,0 +1,276 @@
+/* ──────────────────────────────────────────────────────
+   Configuration area — form primitives used by the
+   section pages (datos, redes, whatsapp, pagos, etc.)
+   ────────────────────────────────────────────────────── */
+
+.admin-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nimbus-space-1, 0.25rem);
+}
+
+.admin-label {
+  font-size: var(--nimbus-fs-body);
+  font-weight: var(--nimbus-fw-medium, 500);
+  color: var(--nimbus-neutral-text-high);
+}
+
+.admin-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nimbus-space-4);
+}
+
+.admin-setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-setting-label {
+  font-size: var(--nimbus-fs-body);
+  font-weight: var(--nimbus-fw-medium, 500);
+  color: var(--nimbus-neutral-text-high);
+}
+
+.admin-setting-desc {
+  font-size: var(--nimbus-fs-caption);
+  color: var(--nimbus-neutral-text-low);
+  line-height: 1.45;
+}
+
+.admin-setting-divider {
+  height: 1px;
+  margin: var(--nimbus-space-4) 0;
+  background: var(--nimbus-neutral-surface);
+}
+
+/* Toggle switch */
+.admin-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.admin-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.admin-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--nimbus-neutral-surface-highlight);
+  border-radius: var(--nimbus-radius-full);
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.admin-toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+  box-shadow: var(--nimbus-shadow-1);
+}
+
+.admin-toggle input:checked + .admin-toggle-slider {
+  background: var(--nimbus-primary);
+}
+
+.admin-toggle input:checked + .admin-toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.admin-section-header {
+  margin-bottom: var(--nimbus-space-3);
+}
+
+.admin-form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nimbus-space-3);
+}
+
+.admin-page-loading {
+  padding: var(--nimbus-space-6);
+  text-align: center;
+  color: var(--nimbus-neutral-text-low);
+}
+
+.banner-preview {
+  border: 1px solid var(--nimbus-neutral-surface);
+  border-radius: var(--nimbus-radius-sm);
+  overflow: hidden;
+  background: var(--nimbus-neutral-surface);
+}
+
+/* ──────────────────────────────────────────────────────
+   Payment methods list
+   ────────────────────────────────────────────────────── */
+.pm-admin-section-label {
+  margin-bottom: var(--nimbus-space-2);
+  font-size: var(--nimbus-fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nimbus-neutral-text-low);
+}
+
+.pm-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nimbus-space-2);
+  margin-bottom: var(--nimbus-space-4);
+}
+
+.pm-admin-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nimbus-space-3);
+  padding: var(--nimbus-space-2) var(--nimbus-space-3);
+  background: var(--nimbus-neutral-surface);
+  border-radius: var(--nimbus-radius-sm);
+  border: 1px solid var(--nimbus-neutral-surface);
+}
+
+.pm-admin-logo {
+  width: 40px;
+  height: 25px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.pm-admin-logo-placeholder {
+  width: 40px;
+  height: 25px;
+  border-radius: var(--nimbus-radius-sm);
+  background: var(--nimbus-neutral-background);
+  border: 1px solid var(--nimbus-neutral-surface);
+  flex-shrink: 0;
+}
+
+.pm-admin-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pm-admin-name {
+  font-size: var(--nimbus-fs-body);
+  color: var(--nimbus-neutral-text-high);
+}
+
+.pm-admin-discount {
+  display: flex;
+  align-items: center;
+  gap: var(--nimbus-space-1, 0.25rem);
+}
+
+.pm-admin-discount-label {
+  font-size: var(--nimbus-fs-caption);
+  color: var(--nimbus-neutral-text-low);
+}
+
+.pm-admin-discount .admin-input {
+  width: 64px;
+  text-align: right;
+}
+
+/* ──────────────────────────────────────────────────────
+   Carousel slide editor
+   ────────────────────────────────────────────────────── */
+.admin-carousel-slides {
+  display: grid;
+  gap: var(--nimbus-space-3);
+}
+
+.admin-carousel-slide {
+  margin: 0;
+  border: 1px solid var(--nimbus-neutral-surface);
+}
+
+.admin-carousel-slide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nimbus-space-3);
+}
+
+.admin-carousel-slide-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nimbus-space-1, 0.25rem);
+}
+
+.admin-carousel-slide-actions .admin-btn {
+  min-width: 34px;
+}
+
+.admin-carousel-image-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--nimbus-space-2);
+}
+
+.admin-carousel-upload-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-carousel-previews {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--nimbus-space-4);
+  margin-top: var(--nimbus-space-4);
+}
+
+.admin-carousel-preview {
+  position: relative;
+  width: min(100%, 400px);
+  aspect-ratio: 16 / 5;
+  overflow: hidden;
+  border: 1px solid var(--nimbus-neutral-surface);
+  border-radius: var(--nimbus-radius-sm);
+  background: var(--nimbus-neutral-surface);
+}
+
+.admin-carousel-preview--mobile {
+  width: min(100%, 240px);
+  aspect-ratio: 2 / 1;
+}
+
+.admin-carousel-preview-image {
+  object-fit: cover;
+}
+
+@media (max-width: 600px) {
+  .admin-carousel-image-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-carousel-upload-button {
+    justify-self: start;
+  }
+
+  .admin-carousel-slide-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-carousel-slide-actions {
+    flex-wrap: wrap;
+  }
+}

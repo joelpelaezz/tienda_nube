@@ -4,15 +4,42 @@ const ADMIN_EMAIL = 'admin@tienda.com';
 const ADMIN_PASSWORD = 'admin123';
 
 async function loginAsAdmin(page: Page) {
-  await page.goto('/ingresar');
+  // Check if already logged in by visiting admin
+  await page.goto('/admin/productos');
+  if (!page.url().includes('/ingresar')) {
+    // Already logged in, proceed
+    return;
+  }
 
-  await page.getByLabel('Email').fill(ADMIN_EMAIL);
-  await page.getByLabel('Contraseña').fill(ADMIN_PASSWORD);
+  // Retry up to 2 times if login fails due to session issues
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    await page.goto('/ingresar');
 
-  await page.getByRole('button', { name: /iniciar sesión/i }).click();
-  
-  // Wait for URL to leave /ingresar
-  await page.waitForURL((url) => !url.pathname.includes('/ingresar'), { timeout: 15000 });
+    await page.getByLabel('Email').fill(ADMIN_EMAIL);
+    await page.getByLabel('Contraseña').fill(ADMIN_PASSWORD);
+
+    await page.getByRole('button', { name: /iniciar sesión/i }).click();
+
+    try {
+      await page.waitForURL((url) => !url.pathname.includes('/ingresar'), { timeout: 15000 });
+      return; // Login succeeded
+    } catch {
+      // Check if we have an error message
+      if (page.url().includes('/ingresar')) {
+        const errorEl = page.locator('.auth-error');
+        if (await errorEl.isVisible().catch(() => false)) {
+          const msg = await errorEl.textContent().catch(() => 'unknown');
+          throw new Error('Login failed: ' + msg);
+        }
+      }
+      // Retry if this was attempt 1
+      if (attempt < 2) {
+        await page.waitForTimeout(1000);
+        continue;
+      }
+      throw new Error('Login failed after 2 attempts, still on: ' + page.url());
+    }
+  }
 }
 
 test.describe('Admin: Crear producto', () => {
@@ -41,24 +68,25 @@ test.describe('Admin: Crear producto', () => {
     await page.locator('input[type="number"]').first().fill('5990');
 
     // Category
-    await page.locator('select').first().selectOption({ label: 'Remeras' });
+    await page.getByText('Remeras', { exact: true }).locator('..').locator('input[type="checkbox"]').check();
 
     // Image URL
     await page.locator('input[placeholder*="mitiendanube"]').fill(
       'https://dcdn-us.mitiendanube.com/stores/005/154/974/products/1000130760-6470519c0c2385666f17408796629820-100-0.webp'
     );
 
-    // First variant: Talle S, stock 10
-    await page.locator('input[placeholder="Ej: Talle M"]').first().fill('Talle S');
-    await page.locator('input[type="number"]').nth(1).fill('10');
+    // Variant property: Talle S and M
+    await page.getByRole('button', { name: '+ Agregar propiedad' }).click();
+    await page.getByRole('button', { name: 'Talle', exact: true }).click();
+    await page.locator('label.admin-variant-option-tag').filter({ hasText: /^S$/ }).click();
+    await page.locator('label.admin-variant-option-tag').filter({ hasText: /^M$/ }).click();
+    await page.getByRole('button', { name: 'Generar combinaciones' }).click();
 
-    // Add second variant
-    await page.getByRole('button', { name: '+ Agregar variante' }).click();
-
-    // Fill second variant row: Talle M, stock 15
-    const variantRows = page.locator('.admin-variant-row');
-    await variantRows.nth(1).locator('input[type="text"]').fill('Talle M');
-    await variantRows.nth(1).locator('input[type="number"]').fill('15');
+    const combinationRows = page.locator('.admin-combinations-table tbody tr');
+    await combinationRows.nth(0).locator('input[type="number"]').first().fill('10');
+    await combinationRows.nth(1).locator('input[type="number"]').first().fill('15');
+    await combinationRows.nth(0).locator('input[placeholder="Precio de la variante"]').fill('5990');
+    await combinationRows.nth(1).locator('input[placeholder="Precio de la variante"]').fill('5990');
 
     // Submit
     await page.getByRole('button', { name: 'Crear producto' }).first().click();
@@ -78,26 +106,9 @@ test.describe('Admin: Crear producto', () => {
       await page.waitForTimeout(500);
     }
 
-    // Fill using plain JS to bypass React event system issues
-    await page.evaluate((data: { name: string; price: string }) => {
-      // Find inputs by placeholder and set their values directly
-      const inputs = document.querySelectorAll<HTMLInputElement>('#new-product-form input');
-      inputs.forEach(input => {
-        if (input.placeholder.includes('Nombre del producto')) {
-          // React needs us to set the value and dispatch an input event
-          const nativeInputValueSetter = (Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') as PropertyDescriptor).set;
-          nativeInputValueSetter.call(input, data.name);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        if (input.type === 'number' && input.placeholder === '0') {
-          const nativeInputValueSetter = (Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') as PropertyDescriptor).set;
-          nativeInputValueSetter.call(input, data.price);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      });
-    }, { name: uniqueName, price: '3500' });
+    await page.getByPlaceholder('Nombre del producto').fill(uniqueName);
+    // Target only the regular price. Offer and transfer prices share the same placeholder.
+    await page.locator('input[type="number"][placeholder="0"]').first().fill('3500');
 
     // Click the FOOTER submit button
     await page.getByRole('button', { name: 'Crear producto' }).last().click({ force: true });

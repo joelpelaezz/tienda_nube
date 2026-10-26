@@ -4,20 +4,31 @@ import CartDrawer from '@/components/CartDrawer';
 import ProductActions from '@/components/ProductActions';
 import ProductCard from '@/components/ProductCard';
 import SocialIcons from '@/components/social/SocialIcons';
+import ProductGallery from '@/components/ProductGallery';
+import PaymentMethodsModal from '@/components/PaymentMethodsModal';
+import ShippingCalculator from '@/components/ShippingCalculator';
 import { db } from '@/lib/db';
-import { products, productImages, productVariants, categories } from '@/drizzle/schema';
-import { eq, desc } from 'drizzle-orm';
+import { products, productImages, productVariants, productVariantOptions } from '@/drizzle/schema';
+import { eq, desc, sql, and, inArray } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils/format';
 import type { ProductCardData, ProductDetailData } from '@/types/product';
 import type { Metadata } from 'next';
+import { getPaymentMethods, getSettings } from '@/app/admin/configuracion/actions';
+import { getShippingConfiguration } from '@/app/admin/envios/actions';
+import { getPricePresentation, isSellablePrice } from '@/lib/products/pricing';
 
 interface ProductPageProps {
   params: Promise<{
     slug: string;
   }>;
+}
+
+function toAbsoluteUrl(url: string | undefined, publicSiteUrl: string) {
+  if (!url) return undefined;
+  return url.startsWith('/') ? `${publicSiteUrl}${url}` : url;
 }
 
 async function getProduct(slug: string): Promise<ProductDetailData[]> {
@@ -31,16 +42,18 @@ async function getProduct(slug: string): Promise<ProductDetailData[]> {
         price: products.price,
         priceOffer: products.priceOffer,
         priceTransfer: products.priceTransfer,
+        stock: products.stock,
+        reservedStock: products.reservedStock,
+        productType: products.productType,
         discount: products.discount,
         badge: products.badge,
-        imageUrl: productImages.url,
-        categoryId: products.categoryId,
-        categoryName: categories.name,
+        hasFreeShipping: products.hasFreeShipping,
+         imageUrl: productImages.url,
+         imageAlt: productImages.alt,
       })
       .from(products)
       .leftJoin(productImages, eq(products.id, productImages.productId))
-      .leftJoin(categories, eq(products.categoryId, categories.id))
-      .where(eq(products.slug, slug))
+      .where(and(eq(products.slug, slug), eq(products.isVisible, true)))
       .orderBy(productImages.position);
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -50,17 +63,65 @@ async function getProduct(slug: string): Promise<ProductDetailData[]> {
 
 async function getVariants(productId: number) {
   try {
-    return await db
-      .select()
+    const variants = await db
+      .select({
+        id: productVariants.id,
+        productId: productVariants.productId,
+        name: productVariants.name,
+        price: productVariants.price,
+        priceOffer: productVariants.priceOffer,
+        imageUrl: productVariants.imageUrl,
+        stock: productVariants.stock,
+        reservedStock: productVariants.reservedStock,
+        variantTypeId: productVariants.variantTypeId,
+        weight: productVariants.weight,
+        length: productVariants.length,
+        width: productVariants.width,
+        height: productVariants.height,
+        sku: productVariants.sku,
+        barcode: productVariants.barcode,
+        isVisible: productVariants.isVisible,
+      })
       .from(productVariants)
-      .where(eq(productVariants.productId, productId));
+      .where(and(eq(productVariants.productId, productId), eq(productVariants.isVisible, true)));
+    const relations = variants.length > 0
+      ? await db.select().from(productVariantOptions).where(inArray(productVariantOptions.productVariantId, variants.map((variant) => variant.id)))
+      : [];
+    return variants.map((variant) => ({
+      ...variant,
+      optionIds: relations
+        .filter((relation) => relation.productVariantId === variant.id)
+        .sort((a, b) => a.position - b.position)
+        .map((relation) => String(relation.variantOptionId)),
+    }));
   } catch (error) {
     console.error('Error fetching variants:', error);
     return [];
   }
 }
 
-async function getRelatedProducts(categoryId: number, currentProductId: number): Promise<ProductCardData[]> {
+async function getVariantStockMap(productId: number, productType?: string | null): Promise<Record<number, number>> {
+  if (productType === 'digital') return {};
+  try {
+    const variants = await db
+      .select({
+        id: productVariants.id,
+        stock: sql<number>`coalesce(${productVariants.stock}, 0)`,
+        reservedStock: sql<number>`coalesce(${productVariants.reservedStock}, 0)`,
+      })
+      .from(productVariants)
+      .where(and(eq(productVariants.productId, productId), eq(productVariants.isVisible, true)));
+    const map: Record<number, number> = {};
+    for (const v of variants) {
+      map[v.id] = Math.max(0, v.stock - v.reservedStock);
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+async function getRelatedProducts(productId: number): Promise<ProductCardData[]> {
   try {
     const result = await db
       .select({
@@ -72,15 +133,28 @@ async function getRelatedProducts(categoryId: number, currentProductId: number):
         priceTransfer: products.priceTransfer,
         discount: products.discount,
         badge: products.badge,
-        imageUrl: productImages.url,
+        hasFreeShipping: products.hasFreeShipping,
+        availableStock: sql<number>`greatest(0, coalesce(${products.stock}, 0) - coalesce(${products.reservedStock}, 0))`,
+        productType: products.productType,
+          imageUrl: sql<string | null>`(
+            select pi.url from product_images pi
+            where pi.product_id = ${products.id}
+            order by pi.position asc nulls last, pi.id asc
+            limit 1
+          )`,
       })
       .from(products)
-      .leftJoin(productImages, eq(products.id, productImages.productId))
-      .where(eq(products.categoryId, categoryId))
+      .where(and(sql`exists (
+        select 1 from product_categories pc
+        where pc.product_id = ${products.id}
+          and pc.category_id in (
+            select pc2.category_id from product_categories pc2 where pc2.product_id = ${productId}
+          )
+      )`, eq(products.isVisible, true), sql`${products.id} <> ${productId}`))
       .orderBy(desc(products.createdAt))
       .limit(16);
 
-    return result.filter((p) => p.id !== currentProductId);
+    return result;
   } catch (error) {
     console.error('Error fetching related products:', error);
     return [];
@@ -93,9 +167,21 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   if (productData.length === 0) return { title: 'Producto no encontrado' };
 
   const product = productData[0];
+  const shareSettings = await getSettings();
+  const publicSiteUrl = (shareSettings.publicSiteUrl || 'https://www.tendenciashop.com.ar').replace(/\/+$/, '');
+  const shareUrl = `${publicSiteUrl}/productos/${product.slug}/`;
+  const shareText = (shareSettings.socialShareText || 'Mirá este producto: {product}').replace('{product}', product.name);
+  const shareImageUrl = toAbsoluteUrl(shareSettings.socialShareImageUrl || product.imageUrl || undefined, publicSiteUrl);
   return {
     title: `${product.name} - Tendencia Shop`,
     description: product.description || `Comprá ${product.name} en Tendencia Shop`,
+    metadataBase: new URL(publicSiteUrl),
+    openGraph: {
+      title: product.name,
+      description: product.description || `Comprá ${product.name} en Tendencia Shop`,
+      url: shareUrl,
+      ...(shareImageUrl ? { images: [{ url: shareImageUrl, alt: product.name }] } : {}),
+    },
   };
 }
 
@@ -109,12 +195,45 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   const product = productData[0];
   const variants = await getVariants(product.id);
-  const relatedProducts = product.categoryId
-    ? await getRelatedProducts(product.categoryId, product.id)
-    : [];
+  const variantStockMap = await getVariantStockMap(product.id, product.productType);
+  const relatedProducts = await getRelatedProducts(product.id);
+  let paymentMethods: Awaited<ReturnType<typeof getPaymentMethods>> = [];
+  try {
+    paymentMethods = await getPaymentMethods();
+  } catch {
+    // Table may not exist yet during build
+  }
+  const activePaymentMethods = paymentMethods.filter(m => m.isActive);
+  const transferPayment = activePaymentMethods.find((method) => method.id === 'transferencia');
+  const hasTransferPayment = transferPayment != null;
+  const hasInstallmentsPayment = activePaymentMethods.some((method) => method.type === 'card' || method.type === 'card_credit');
+  const { methods: shippingMethods } = await getShippingConfiguration();
+  const hasActiveShippingMethod = shippingMethods.some((method) => method.isActive);
+  const shareSettings = await getSettings();
+  const publicSiteUrl = (shareSettings.publicSiteUrl || 'https://www.tendenciashop.com.ar').replace(/\/+$/, '');
+  const shareUrl = `${publicSiteUrl}/productos/${product.slug}/`;
+  const shareText = (shareSettings.socialShareText || 'Mirá este producto: {product}').replace('{product}', product.name);
+  const shareImageUrl = toAbsoluteUrl(shareSettings.socialShareImageUrl || product.imageUrl || undefined, publicSiteUrl) || '';
+  // C4-TRACE: only render payment and shipping amounts when a positive product/variant price exists.
+  const productPresentation = getPricePresentation({
+    regularPrice: product.price,
+    offerPrice: product.priceOffer,
+  });
+  const paymentReferencePrice = variants.length === 0
+    ? (isSellablePrice(productPresentation.finalPrice) ? productPresentation.finalPrice : null)
+    : variants
+      .map((variant) => getPricePresentation({
+        regularPrice: product.price,
+        offerPrice: product.priceOffer,
+        variantRegularPrice: variant.price,
+        variantOfferPrice: variant.priceOffer,
+      }).finalPrice)
+      .filter(isSellablePrice)
+      .sort((a, b) => a - b)[0] ?? null;
 
-  const mainImage = productData[0]?.imageUrl;
-  const thumbnails = productData.filter((p) => p.imageUrl !== null && p.imageUrl !== mainImage);
+  const allImages = productData
+    .filter((p) => p.imageUrl !== null)
+     .map((p) => ({ url: p.imageUrl as string, alt: p.imageAlt || product.name }));
 
   return (
     <>
@@ -133,107 +252,108 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
         {/* Producto - Dos columnas */}
         <div className="detalle-grid">
-          {/* Columna izquierda - Imagen */}
-          <div className="detalle-gallery">
-            <div className="detalle-main-image">
-              {mainImage && (
-                <Image
-                  src={mainImage}
-                  alt={product.name}
-                  fill
-                  className="object-contain"
-                  priority
-                />
-              )}
-              {(product.badge || product.discount) && (
-                <span className="detalle-oferta-badge">OFERTA</span>
-              )}
-            </div>
-
-            {thumbnails.length > 0 && (
-              <div className="detalle-thumbnails">
-                {thumbnails.map((item, index) => (
-                  <div key={index} className="detalle-thumbnail">
-                    {item.imageUrl && (
-                      <Image
-                        src={item.imageUrl}
-                        alt={`${product.name} - imagen ${index + 2}`}
-                        fill
-                        className="object-contain"
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Columna izquierda - Galería de imágenes */}
+          <ProductGallery
+            images={allImages}
+            productName={product.name}
+            badge={product.badge}
+            discount={product.discount}
+            priceOffer={product.priceOffer}
+          />
 
           {/* Columna derecha - Info */}
           <div className="detalle-info">
             <h1 className="detalle-title">{product.name}</h1>
+            {product.hasFreeShipping && (
+              <span className="detalle-free-shipping-badge">Envío gratis</span>
+            )}
 
-            {/* Precios */}
-            <div className="detalle-prices">
-              {product.priceOffer ? (
-                <>
-                  <div className="detalle-price-original">{formatPrice(product.price || 0)}</div>
-                  <div className="detalle-price-row">
-                    <span className="detalle-price-offer">{formatPrice(product.priceOffer)}</span>
-                    {product.discount && (
-                      <span className="detalle-discount-badge">{product.discount} OFF</span>
+            {/* El precio de productos con variantes lo renderiza ProductActions
+                junto al selector para reflejar siempre la variante elegida. */}
+            {variants.length === 0 && (
+              <div className="detalle-prices">
+                {isSellablePrice(productPresentation.finalPrice) ? productPresentation.isOnSale ? (
+                  <>
+                    {productPresentation.regularPrice != null && productPresentation.regularPrice > 0 && (
+                      <div className="detalle-price-original">{formatPrice(productPresentation.regularPrice)}</div>
                     )}
-                  </div>
-                </>
-              ) : (
-                <div className="detalle-price-single">{formatPrice(product.price || 0)}</div>
-              )}
+                    <div className="detalle-price-row">
+                      <span className="detalle-price-offer">{formatPrice(productPresentation.finalPrice)}</span>
+                      {product.discount && (
+                        <span className="detalle-discount-badge">{product.discount} OFF</span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="detalle-price-single">{formatPrice(productPresentation.finalPrice)}</div>
+                ) : (
+                  <div className="detalle-price-single detalle-price-consult">Consultar precio</div>
+                )}
 
-              {product.priceTransfer && (
-                <div className="detalle-price-transfer">
-                  {formatPrice(product.priceTransfer)} CON TRANSFERENCIA O DEPÓSITO
-                </div>
-              )}
-            </div>
+                {isSellablePrice(productPresentation.finalPrice) && isSellablePrice(product.priceTransfer) && hasTransferPayment && (
+                  <div className="detalle-price-transfer">
+                    {formatPrice(product.priceTransfer)} CON TRANSFERENCIA O DEPÓSITO
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Info de cuotas */}
-            <div className="detalle-installments">
-              <div className="detalle-installment-row">
+            {paymentReferencePrice != null && activePaymentMethods.length > 0 && <div className="detalle-installments">
+              {hasInstallmentsPayment && <div className="detalle-installment-row">
                 <span className="detalle-installment-icon">💳</span>
-                <span>12 CUOTAS DE {formatPrice(Math.round((product.priceOffer || product.price || 0) / 12))}</span>
-              </div>
-              <div className="detalle-transfer-info">
-                <span className="detalle-transfer-icon">💵</span>
-                <span>10% de descuento pagando con Transferencia o depósito</span>
-              </div>
-              <Link href="#" className="detalle-payment-link">Ver medios de pago</Link>
-            </div>
+                <span>12 CUOTAS DE {formatPrice(Math.round(paymentReferencePrice! / 12))}</span>
+              </div>}
+                {transferPayment?.discountPercent != null && transferPayment.discountPercent > 0 && (
+                <div className="detalle-transfer-info">
+                  <span className="detalle-transfer-icon">💵</span>
+                  <span>{transferPayment.discountPercent}% de descuento pagando con Transferencia o depósito</span>
+                </div>
+              )}
+              <PaymentMethodsModal
+                methods={activePaymentMethods}
+                productPrice={paymentReferencePrice}
+                productTransferPrice={variants.length === 0 && isSellablePrice(product.priceTransfer) ? product.priceTransfer : null}
+              />
+            </div>}
 
             {/* Selector de color + Agregar al carrito */}
             <ProductActions
               productId={product.id}
               productName={product.name}
               productSlug={product.slug}
-              productPrice={product.priceOffer || product.price || 0}
-              productImageUrl={mainImage || ''}
-              variants={variants.map((v) => ({ id: v.id, name: v.name, price: v.price }))}
-            />
+               productPrice={product.price ?? null}
+              productPriceOffer={product.priceOffer}
+              productTransferPrice={product.priceTransfer}
+              productImageUrl={allImages[0]?.url || ''}
+              variants={variants.map((v) => ({
+                id: v.id,
+                name: v.name,
+                 price: v.price,
+                 priceOffer: v.priceOffer,
+                 stock: product.productType === 'digital' ? null : Math.max(0, (v.stock ?? 0) - (v.reservedStock ?? 0)),
+                imageUrl: v.imageUrl,
+                optionIds: v.optionIds ?? [],
+                variantTypeId: v.variantTypeId ?? null,
+              }))}
+              stockMap={variantStockMap}
+              productStock={Math.max(0, product.stock - product.reservedStock)}
+              productType={product.productType || 'physical'}
+               whatsappNumber={shareSettings.whatsappNumber}
+             />
 
-            {/* Calculador de envío */}
-            <div className="detalle-shipping">
-              <div className="detalle-shipping-header">
-                <span>🚚</span>
-                <span>Medios de envío</span>
+            {/* Info de envío */}
+            {(product as any).weight || (product as any).length || (product as any).width || (product as any).height ? (
+              <div className="detalle-shipping-info">
+                {(product as any).weight && <span>Peso: {(product as any).weight}g</span>}
+                {(product as any).length && (product as any).width && (product as any).height &&
+                  <span>Dimensiones: {(product as any).length} × {(product as any).width} × {(product as any).height} cm</span>}
               </div>
-              <div className="detalle-shipping-form">
-                <input
-                  type="text"
-                  placeholder="Tu código postal"
-                  className="detalle-shipping-input"
-                />
-                <button className="detalle-shipping-btn">CALCULAR</button>
-              </div>
-              <Link href="#" className="detalle-shipping-help">No sé mi código postal</Link>
-            </div>
+            ) : null}
+
+            {hasActiveShippingMethod && paymentReferencePrice != null && (
+              <ShippingCalculator subtotal={paymentReferencePrice} />
+            )}
 
             {/* Compra protegida */}
             <div className="detalle-trust">
@@ -262,7 +382,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
               <span className="detalle-share-label">COMPARTIR:</span>
               <div className="detalle-share-icons">
                 <a
-                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`https://www.tendenciashop.com.ar/productos/${product.slug}/`)}`}
+                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="detalle-share-icon"
@@ -273,7 +393,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                   </svg>
                 </a>
                 <a
-                  href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(`https://www.tendenciashop.com.ar/productos/${product.slug}/`)}&text=${encodeURIComponent(product.name)}`}
+                  href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="detalle-share-icon"
@@ -284,7 +404,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                   </svg>
                 </a>
                 <a
-                  href={`https://pinterest.com/pin/create/button/?url=${encodeURIComponent(`https://www.tendenciashop.com.ar/productos/${product.slug}/`)}&description=${encodeURIComponent(product.name)}`}
+                  href={`https://pinterest.com/pin/create/button/?url=${encodeURIComponent(shareUrl)}&description=${encodeURIComponent(shareText)}${shareImageUrl ? `&media=${encodeURIComponent(shareImageUrl)}` : ''}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="detalle-share-icon"
@@ -312,7 +432,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <h2 className="detalle-similar-title">PRODUCTOS SIMILARES</h2>
             <div className="products-grid">
               {relatedProducts.slice(0, 4).map((relatedProduct) => (
-                <ProductCard key={relatedProduct.id} {...relatedProduct} />
+                 <ProductCard key={relatedProduct.id} {...relatedProduct} showTransferPayment={hasTransferPayment} whatsappNumber={shareSettings.whatsappNumber} />
               ))}
             </div>
           </div>

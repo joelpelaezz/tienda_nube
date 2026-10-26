@@ -34,10 +34,12 @@ export default function HomeBanner({ data }: HomeBannerProps) {
     <div className="home-banner">
       {data.link ? (
         <a href={data.link} className="home-banner-link" target="_blank" rel="noopener noreferrer">
+          {/* C4-TRACE: configurable banner URLs bypass the Next remote-host allowlist. */}
           <Image
             src={src}
             alt={alt}
             fill
+            unoptimized
             className="home-banner-image"
             priority
             sizes="100vw"
@@ -48,6 +50,7 @@ export default function HomeBanner({ data }: HomeBannerProps) {
           src={src}
           alt={alt}
           fill
+          unoptimized
           className="home-banner-image"
           priority
           sizes="100vw"

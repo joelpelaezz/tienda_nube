@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import TrackedWhatsAppLink from '@/components/TrackedWhatsAppLink';
 import { db } from '@/lib/db';
 import { customers, orders } from '@/drizzle/schema';
-import { eq, sql, desc, ilike, and } from 'drizzle-orm';
+import { eq, sql, desc, asc, ilike, and, or } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,9 +19,11 @@ async function getCustomersData(page: number, perPage: number, search: string) {
   const conditions = [];
   if (search) {
     conditions.push(
-      ilike(customers.firstName, `%${search}%`),
-      ilike(customers.lastName, `%${search}%`),
-      ilike(customers.email, `%${search}%`),
+      or(
+        ilike(customers.firstName, `%${search}%`),
+        ilike(customers.lastName, `%${search}%`),
+        ilike(customers.email, `%${search}%`),
+      )
     );
   }
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -46,20 +49,48 @@ async function getCustomersData(page: number, perPage: number, search: string) {
       .then(r => r[0]),
     db.select({
       customerId: orders.customerId,
-      lastOrderNumber: sql<string>`max(${orders.orderNumber})`,
-      lastOrderDate: sql<Date>`max(${orders.createdAt})`,
       totalSpent: sql<number>`coalesce(sum(${orders.total}), 0)`,
     })
       .from(orders)
       .groupBy(orders.customerId),
   ]);
 
-  const statsMap: Record<number, { lastOrderNumber: string; lastOrderDate: Date; totalSpent: number }> = {};
+  // Get last order ID per customer (most recent order by createdAt)
+  const lastOrdersMap: Record<number, { lastOrderId: number; lastOrderNumber: string; lastOrderDate: Date | null }> = {};
+  try {
+    // Use raw SQL with DISTINCT ON for Postgres
+    const lastOrders = await db
+      .select({
+        customerId: orders.customerId,
+        lastOrderId: orders.id,
+        lastOrderNumber: orders.orderNumber,
+        lastOrderDate: orders.createdAt,
+      })
+      .from(orders)
+      .orderBy(asc(orders.customerId), desc(orders.createdAt))
+      // @ts-ignore - distinctOn is supported in Postgres
+      .distinctOn([orders.customerId]);
+
+    for (const o of lastOrders) {
+      if (o.customerId) {
+        lastOrdersMap[o.customerId] = {
+          lastOrderId: o.lastOrderId,
+          lastOrderNumber: o.lastOrderNumber || '',
+          lastOrderDate: o.lastOrderDate,
+        };
+      }
+    }
+  } catch {
+    // Fallback: use statsMap order numbers if distinctOn fails
+  }
+
+  const statsMap: Record<number, { lastOrderId: number; lastOrderNumber: string; lastOrderDate: Date | null; totalSpent: number }> = {};
   for (const stat of customerStats) {
     if (stat.customerId) {
       statsMap[stat.customerId] = {
-        lastOrderNumber: stat.lastOrderNumber || '',
-        lastOrderDate: stat.lastOrderDate,
+        lastOrderId: lastOrdersMap[stat.customerId]?.lastOrderId || 0,
+        lastOrderNumber: lastOrdersMap[stat.customerId]?.lastOrderNumber || '',
+        lastOrderDate: lastOrdersMap[stat.customerId]?.lastOrderDate || null,
         totalSpent: stat.totalSpent || 0,
       };
     }
@@ -68,6 +99,7 @@ async function getCustomersData(page: number, perPage: number, search: string) {
   const enriched = customersList.map(c => ({
     ...c,
     lastOrder: statsMap[c.id]?.lastOrderNumber || null,
+    lastOrderId: statsMap[c.id]?.lastOrderId || null,
     lastOrderDate: statsMap[c.id]?.lastOrderDate || null,
     totalSpent: statsMap[c.id]?.totalSpent || 0,
   }));
@@ -152,7 +184,7 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
           </p>
         </div>
       ) : (
-        <div className="admin-table-container">
+        <div className="admin-table-container admin-mobile-cards admin-mobile-cards--clients">
           <table className="admin-table">
             <thead>
               <tr>
@@ -198,7 +230,10 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
                         </a>
                       )}
                       {customer.phone && (
-                        <a
+                        <TrackedWhatsAppLink
+                          source="admin-customer-contact"
+                          name={`${customer.firstName} ${customer.lastName}`.trim()}
+                          phone={customer.phone || undefined}
                           href={`https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}`}
                           className="admin-contact-icon admin-contact-whatsapp"
                           title={customer.phone}
@@ -208,13 +243,13 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
                           </svg>
-                        </a>
+                        </TrackedWhatsAppLink>
                       )}
                     </div>
                   </td>
                   <td>
-                    {customer.lastOrder ? (
-                      <Link href={`/admin/ventas/1`} className="admin-link">
+                    {customer.lastOrder && customer.lastOrderId ? (
+                      <Link href={`/admin/ventas/${customer.lastOrderId}`} className="admin-link">
                         {customer.lastOrder}
                       </Link>
                     ) : (
@@ -230,7 +265,10 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
                   <td>
                     <div className="admin-contact-actions">
                       {customer.phone && (
-                        <a
+                        <TrackedWhatsAppLink
+                          source="admin-customer-message"
+                          name={`${customer.firstName} ${customer.lastName}`.trim()}
+                          phone={customer.phone || undefined}
                           href={`https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}?text=Hola%20${encodeURIComponent(customer.firstName || '')},%20somos%20Tendencias.`}
                           className="admin-contact-icon admin-contact-whatsapp"
                           target="_blank"
@@ -239,7 +277,7 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
                           </svg>
-                        </a>
+                        </TrackedWhatsAppLink>
                       )}
                       {customer.email && (
                         <a
@@ -307,7 +345,7 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <a href="#">Más sobre contactar a clientes</a>
+        <span style={{ color: 'var(--color-text-muted)', cursor: 'default' }}>Más sobre contactar a clientes</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
         </svg>

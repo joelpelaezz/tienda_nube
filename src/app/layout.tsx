@@ -1,8 +1,15 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import CookieBar from '@/components/CookieBar';
 import QuickShopProvider from '@/components/QuickShopProvider';
 import Providers from '@/components/Providers';
+import WhatsAppFloatingButton from '@/components/WhatsAppFloatingButton';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
 
 export const metadata: Metadata = {
   title: 'Tienda Online de Tendencia Shop',
@@ -29,6 +36,7 @@ export default function RootLayout({
           {children}
           <CookieBar />
           <QuickShopProvider />
+          <WhatsAppFloatingButton />
         </Providers>
       </body>
     </html>

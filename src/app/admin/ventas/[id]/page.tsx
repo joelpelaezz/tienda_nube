@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { db } from '@/lib/db';
 import { orders, orderItems, customers, productImages } from '@/drizzle/schema';
 import { eq, asc, inArray } from 'drizzle-orm';
@@ -128,7 +129,7 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
               <div key={item.id} className="admin-detail-item">
                 <div className="admin-detail-item-img">
                   {imagesMap[item.productId!] ? (
-                    <img src={imagesMap[item.productId!]} alt={item.productName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <Image src={imagesMap[item.productId!]} alt={item.productName} width={96} height={96} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <div className="admin-detail-item-img-placeholder">📷</div>
                   )}

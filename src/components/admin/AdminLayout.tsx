@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -28,21 +28,23 @@ const NAV_ITEMS = [
       { label: 'Lista de productos', href: '/admin/productos' },
       { label: 'Inventario', href: '/admin/inventario' },
       { label: 'Categorías', href: '/admin/categorias' },
-      { label: 'Suscripciones', href: '/admin/suscripciones', badge: 'Nuevo' },
-      { label: 'Tablas de precios', href: '/admin/precios', badge: 'Nuevo' },
+      { label: 'Variaciones', href: '/admin/variaciones' },
+      { label: 'Suscripciones', href: '/admin/suscripciones', badgeKey: 'subscribers' },
+      { label: 'Tablas de precios', href: '/admin/precios' },
     ],
   },
   { label: 'Pago Nube', icon: 'credit-card', href: '/admin/pagos' },
-  { label: 'Envío Nube', icon: 'truck', href: '/admin/envios', badge: 'Nuevo' },
+  { label: 'Envío Nube', icon: 'truck', href: '/admin/envios', badgeKey: 'shipping' },
   {
     label: 'Clientes', icon: 'users', href: '/admin/clientes',
     children: [
       { label: 'Lista de clientes', href: '/admin/clientes' },
-      { label: 'Mensajes', href: '/admin/clientes/mensajes', badge: '1' },
+      { label: 'Mensajes', href: '/admin/clientes/mensajes', badgeKey: 'messages' },
     ],
   },
   { label: 'Descuentos', icon: 'percent', href: '/admin/descuentos' },
   { label: 'Marketing', icon: 'megaphone', href: '/admin/marketing' },
+  { label: 'Comunicaciones', icon: 'message-circle', href: '/admin/comunicaciones' },
 
   // Canales de venta
   { section: 'Canales de venta' },
@@ -57,7 +59,7 @@ const NAV_ITEMS = [
 
   // Aplicaciones
   { section: 'Aplicaciones' },
-  { label: 'Configuración', icon: 'settings', href: '/admin/config' },
+  { label: 'Configuración', icon: 'settings', href: '/admin/configuracion' },
 ];
 
 /* ──────────────────────────────────────────────────────
@@ -117,9 +119,19 @@ function NavIcon({ name, size = 18 }: { name: string; size?: number }) {
 /* ──────────────────────────────────────────────────────
    Sidebar component
    ────────────────────────────────────────────────────── */
-function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+type NavigationStats = { messages: number; subscribers: number; shipping: number };
+
+function Sidebar({ collapsed, mobileOpen, onToggle, onNavigate }: { collapsed: boolean; mobileOpen: boolean; onToggle: () => void; onNavigate: () => void }) {
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>(['/admin/productos']);
+  const [stats, setStats] = useState<NavigationStats>({ messages: 0, subscribers: 0, shipping: 0 });
+
+  useEffect(() => {
+    void fetch('/api/admin/navigation-stats')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: NavigationStats | null) => { if (data) setStats(data); })
+      .catch(() => undefined);
+  }, []);
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/');
 
@@ -130,7 +142,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   };
 
   return (
-    <aside className={`admin-sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <aside className={`admin-sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       {/* Logo — Tiendanube swirl icon only */}
       <div className="admin-sidebar-logo">
         <div className="admin-sidebar-logo-icon">
@@ -167,7 +179,8 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           }
 
           // Nav item with children (expandable)
-          const navItem = item as { label: string; icon: string; href: string; badge?: string; external?: boolean; children?: { label: string; href: string; badge?: string }[] };
+           const navItem = item as { label: string; icon: string; href: string; badge?: string; badgeKey?: keyof NavigationStats; external?: boolean; children?: { label: string; href: string; badge?: string; badgeKey?: keyof NavigationStats }[] };
+           const getBadge = (entry: { badge?: string; badgeKey?: keyof NavigationStats }) => entry.badgeKey ? (stats[entry.badgeKey] > 0 ? String(stats[entry.badgeKey]) : null) : entry.badge;
 
           if (navItem.children) {
             const isExpanded = expandedItems.includes(navItem.href);
@@ -201,10 +214,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                         key={child.href}
                         href={child.href}
                         className={`admin-nav-child-item ${pathname === child.href || pathname.startsWith(child.href + '/') ? 'active' : ''}`}
+                        onClick={onNavigate}
                       >
                         <span>{child.label}</span>
-                        {child.badge && (
-                          <span className="admin-nav-badge admin-nav-badge-new">{child.badge}</span>
+                         {getBadge(child) && (
+                           <span className="admin-nav-badge admin-nav-badge-count">{getBadge(child)}</span>
                         )}
                       </Link>
                     ))}
@@ -225,14 +239,15 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
               title={collapsed ? navItem.label : undefined}
               target={navItem.external ? '_blank' : undefined}
               rel={navItem.external ? 'noopener noreferrer' : undefined}
+              onClick={onNavigate}
             >
               <span className="admin-nav-icon">
                 <NavIcon name={navItem.icon} />
               </span>
               <span className="admin-nav-label">{navItem.label}</span>
-              {navItem.badge && (
-                <span className={`admin-nav-badge ${navItem.badge === 'Nuevo' ? 'admin-nav-badge-new' : 'admin-nav-badge-count'}`}>
-                  {navItem.badge}
+              {getBadge(navItem) && (
+                <span className="admin-nav-badge admin-nav-badge-count">
+                  {getBadge(navItem)}
                 </span>
               )}
               {navItem.external && !collapsed && (
@@ -251,10 +266,23 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 /* ──────────────────────────────────────────────────────
    Topbar component
    ────────────────────────────────────────────────────── */
-function Topbar() {
+function Topbar({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
   return (
     <header className="admin-topbar">
       <div className="admin-topbar-left">
+        {/* Mobile hamburger */}
+        <button
+          className="admin-topbar-hamburger"
+          onClick={onMobileMenuToggle}
+          aria-label="Abrir menú"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+
         <div className="admin-topbar-breadcrumb">
           <span>Admin</span>
         </div>
@@ -295,14 +323,37 @@ function Topbar() {
    ────────────────────────────────────────────────────── */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
 
   return (
     <div className="admin-app">
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="admin-mobile-overlay"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       <div className="admin-layout">
-        <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          mobileOpen={mobileOpen}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onNavigate={() => setMobileOpen(false)}
+        />
 
         <div className={`admin-main-wrapper ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-          <Topbar />
+          <Topbar onMobileMenuToggle={() => setMobileOpen(!mobileOpen)} />
           <main className="admin-content">
             {children}
           </main>

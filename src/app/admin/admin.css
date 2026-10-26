@@ -97,6 +97,222 @@
   --nimbus-z-400: 400;
 }
 
+/* Variant configuration — quiet inventory surface with a visual color cue. */
+.admin-variants-page {
+  max-width: 1280px;
+}
+
+.admin-variants-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  padding: 1.75rem 2rem;
+  border: 1px solid #dce5f2;
+  border-radius: var(--nimbus-radius-lg);
+  background: linear-gradient(120deg, #f5f8ff 0%, #ffffff 72%);
+}
+
+.admin-variants-hero-mark {
+  color: var(--nimbus-primary);
+  font-size: 5rem;
+  line-height: 1;
+  opacity: .18;
+}
+
+.admin-eyebrow {
+  display: block;
+  margin-bottom: .35rem;
+  color: var(--nimbus-primary-text-low);
+  font-size: var(--nimbus-fs-caption);
+  font-weight: var(--nimbus-fw-bold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.admin-page-subtitle {
+  max-width: 620px;
+  margin: .5rem 0 0;
+  color: var(--nimbus-neutral-text-low);
+  font-size: var(--nimbus-fs-body-highlight);
+}
+
+.admin-variants-create {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(420px, 1.2fr);
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid var(--nimbus-primary);
+}
+
+.admin-variants-create-form {
+  display: grid;
+  grid-template-columns: 1fr 150px auto;
+  gap: .75rem;
+  align-items: center;
+}
+
+.admin-variants-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-variant-config-card {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-variant-config-card.is-archived,
+.admin-variant-config-option.is-archived {
+  opacity: .62;
+}
+
+.admin-variant-config-header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding-bottom: .9rem;
+  border-bottom: 1px solid #e7ebf1;
+}
+
+.admin-variant-config-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--nimbus-radius-md);
+  background: var(--nimbus-primary-surface);
+  color: var(--nimbus-primary);
+  font-size: .9rem;
+  font-weight: var(--nimbus-fw-bold);
+}
+
+.admin-variant-config-icon[data-presentation="color"] {
+  background: #fff0eb;
+  color: #c45e40;
+}
+
+.admin-variant-config-icon[data-presentation="image"] {
+  background: #edf8f4;
+  color: #1d8561;
+}
+
+.admin-variant-config-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-variant-config-heading h2 {
+  margin: 0;
+  color: var(--nimbus-neutral-text-high);
+  font-size: var(--nimbus-fs-h5);
+}
+
+.admin-variant-config-heading span,
+.admin-variant-config-option em {
+  color: var(--nimbus-neutral-text-low);
+  font-size: var(--nimbus-fs-caption);
+  font-style: normal;
+}
+
+.admin-variant-option-list {
+  display: grid;
+  gap: .5rem;
+  flex: 1;
+}
+
+.admin-variant-config-option {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-height: 38px;
+  padding: .35rem .5rem;
+  border-radius: var(--nimbus-radius-sm);
+  background: #fafbfc;
+  color: var(--nimbus-neutral-text-high);
+  font-size: var(--nimbus-fs-body);
+}
+
+.admin-variant-config-option > span:not(.admin-variant-color-swatch) {
+  flex: 1;
+}
+
+.admin-variant-color-swatch {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid rgba(0, 0, 0, .16);
+  border-radius: 50%;
+}
+
+.admin-variant-add-option {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: .5rem;
+  align-items: center;
+  padding-top: .5rem;
+}
+
+.admin-variant-add-option input[type="color"] {
+  width: 34px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid #d7dce5;
+  border-radius: var(--nimbus-radius-sm);
+  background: #fff;
+  cursor: pointer;
+}
+
+.admin-ghost-action,
+.admin-variant-archive {
+  padding: .2rem .35rem;
+  border: 0;
+  background: transparent;
+  color: var(--nimbus-primary);
+  font: inherit;
+  font-size: var(--nimbus-fs-caption);
+  cursor: pointer;
+}
+
+.admin-variant-archive {
+  align-self: flex-start;
+  margin-top: .25rem;
+  color: var(--nimbus-neutral-text-low);
+}
+
+@media (max-width: 800px) {
+  .admin-variants-hero,
+  .admin-variants-create {
+    display: block;
+  }
+
+  .admin-variants-hero-mark {
+    display: none;
+  }
+
+  .admin-variants-create-form {
+    grid-template-columns: 1fr;
+    margin-top: 1rem;
+  }
+
+  .admin-variants-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-variant-add-option {
+    grid-template-columns: 1fr auto;
+  }
+
+  .admin-variant-add-option .admin-btn {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ──────────────────────────────────────────────────────
    Base admin
    ────────────────────────────────────────────────────── */
@@ -532,6 +748,198 @@
 }
 
 
+
+/* ──────────────────────────────────────────────────────
+   Shared form feedback (used across admin modules)
+   ────────────────────────────────────────────────────── */
+.admin-field-help {
+  display: block;
+  margin-top: var(--nimbus-space-1, 0.25rem);
+  font-size: var(--nimbus-fs-caption);
+  color: var(--nimbus-neutral-text-low);
+  line-height: 1.45;
+}
+
+.admin-field-error {
+  display: block;
+  margin-top: var(--nimbus-space-1, 0.25rem);
+  font-size: var(--nimbus-fs-caption);
+  color: var(--nimbus-danger);
+}
+
+.admin-error-box {
+  padding: var(--nimbus-space-3);
+  border-radius: var(--nimbus-radius-sm);
+  background: var(--nimbus-danger-surface);
+  color: var(--nimbus-danger-text-low);
+  font-size: var(--nimbus-fs-body);
+  border: 1px solid var(--nimbus-danger);
+}
+
+.admin-btn-ghost {
+  background: var(--nimbus-neutral-surface);
+  color: var(--nimbus-neutral-text-high);
+}
+
+.admin-btn-ghost:hover:not(:disabled) {
+  background: var(--nimbus-neutral-surface-highlight, #e5e7eb);
+}
+
+/* ──────────────────────────────────────────────────────
+   Configuration area — grouped sub-navigation + sections
+   ────────────────────────────────────────────────────── */
+.config-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--nimbus-space-6);
+  align-items: start;
+}
+
+.config-subnav {
+  position: sticky;
+  top: var(--nimbus-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nimbus-space-4);
+}
+
+.config-subnav-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nimbus-neutral-text-low);
+  margin-bottom: var(--nimbus-space-2);
+}
+
+.config-subnav-item {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--nimbus-radius-sm, 4px);
+  font-size: 13px;
+  color: var(--nimbus-neutral-text-high);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.config-subnav-item:hover {
+  background: var(--nimbus-neutral-surface);
+}
+
+.config-subnav-item--active {
+  background: var(--nimbus-primary-surface);
+  color: var(--nimbus-primary, var(--color-primary));
+  font-weight: 600;
+}
+
+.config-section-header {
+  margin-bottom: var(--nimbus-space-5);
+}
+
+.config-section-cards > .admin-card + .admin-card {
+  margin-top: var(--nimbus-space-4);
+}
+
+.config-section-actions {
+  position: sticky;
+  bottom: var(--nimbus-space-4);
+  margin-top: var(--nimbus-space-5);
+  padding: var(--nimbus-space-3) var(--nimbus-space-4);
+  background: var(--nimbus-neutral-background);
+  border: 1px solid var(--nimbus-neutral-surface);
+  border-radius: var(--nimbus-radius-md);
+  box-shadow: var(--nimbus-shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nimbus-space-2);
+}
+
+.config-section-actions-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nimbus-space-3);
+}
+
+.config-section-help {
+  font-size: 12px;
+  color: var(--nimbus-primary, var(--color-primary));
+  text-decoration: none;
+}
+
+.config-section-help:hover {
+  text-decoration: underline;
+}
+
+.config-overview-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nimbus-neutral-text-high);
+  margin-bottom: var(--nimbus-space-3);
+}
+
+.config-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--nimbus-space-3);
+}
+
+.config-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--nimbus-space-4);
+  background: var(--nimbus-neutral-background);
+  border: 1px solid var(--nimbus-neutral-surface);
+  border-radius: var(--nimbus-radius-md);
+  box-shadow: var(--nimbus-shadow-1);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.config-overview-card:hover {
+  border-color: var(--nimbus-primary, var(--color-primary));
+  transform: translateY(-1px);
+}
+
+.config-overview-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nimbus-neutral-text-high);
+}
+
+.config-overview-card-description {
+  font-size: 12px;
+  color: var(--nimbus-neutral-text-low);
+  line-height: 1.5;
+}
+
+.config-overview-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nimbus-primary, var(--color-primary));
+}
+
+@media (max-width: 900px) {
+  .config-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .config-subnav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--nimbus-space-2);
+  }
+
+  .config-subnav-group {
+    width: 100%;
+  }
+}
 
 /* ──────────────────────────────────────────────────────
    Cards (Nimbus)
@@ -1540,6 +1948,10 @@
   gap: var(--nimbus-space-1);
   font-size: var(--nimbus-fs-body);
   color: var(--nimbus-neutral-text-low);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 }
 
 .admin-edit-header {
@@ -2233,6 +2645,44 @@
   background: var(--nimbus-danger-hover);
 }
 
+.admin-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: var(--nimbus-space-4);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.admin-confirm-dialog {
+  width: min(100%, 440px);
+  padding: var(--nimbus-space-6);
+  border-radius: var(--nimbus-radius-md);
+  background: var(--nimbus-neutral-surface-high);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+}
+
+.admin-confirm-title {
+  margin: 0;
+  color: var(--nimbus-neutral-text-high);
+  font-size: var(--nimbus-fs-title);
+  font-weight: var(--nimbus-fw-bold);
+}
+
+.admin-confirm-message {
+  margin: var(--nimbus-space-3) 0 0;
+  color: var(--nimbus-neutral-text-low);
+  line-height: 1.5;
+}
+
+.admin-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--nimbus-space-3);
+  margin-top: var(--nimbus-space-6);
+}
+
 @media (max-width: 768px) {
   .admin-edit-layout {
     grid-template-columns: 1fr;
@@ -2689,6 +3139,86 @@
   font-size: var(--nimbus-fs-caption);
 }
 
+.admin-coupon-code {
+  font-family: var(--nimbus-font-mono, monospace);
+  font-size: 13px;
+  font-weight: var(--nimbus-fw-bold, 700);
+  letter-spacing: 0.04em;
+  background: var(--nimbus-neutral-surface, #f3f4f6);
+  border: 1px solid var(--nimbus-neutral-surface-highlight, #d1d5db);
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.admin-coupon-expired {
+  color: var(--color-danger);
+}
+
+.admin-coupon-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--nimbus-space-4);
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.admin-coupon-modal {
+  width: min(520px, 100%);
+  max-height: min(88vh, 100%);
+  overflow-y: auto;
+  background: var(--nimbus-neutral-background, #fff);
+  border-radius: var(--nimbus-radius-lg, 8px);
+  box-shadow: var(--nimbus-shadow-4, 0 12px 32px rgba(0, 0, 0, 0.2));
+}
+
+.admin-coupon-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nimbus-space-4);
+  padding: var(--nimbus-space-5) var(--nimbus-space-6);
+  border-bottom: 1px solid var(--nimbus-neutral-surface, #e5e7eb);
+}
+
+.admin-coupon-modal-header h2 {
+  font-size: var(--nimbus-fs-h5, 16px);
+}
+
+.admin-coupon-modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--nimbus-radius-full, 9999px);
+  background: transparent;
+  color: var(--nimbus-neutral-text-low, #6b7280);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.admin-coupon-modal-close:hover {
+  background: var(--nimbus-neutral-surface, #f3f4f6);
+}
+
+.admin-coupon-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nimbus-space-3);
+  padding: var(--nimbus-space-5) var(--nimbus-space-6);
+}
+
+.admin-coupon-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--nimbus-space-2);
+  padding: var(--nimbus-space-4) var(--nimbus-space-6);
+  border-top: 1px solid var(--nimbus-neutral-surface, #e5e7eb);
+}
+
 .admin-productos-actions {
   display: flex;
   gap: 6px;
@@ -3055,13 +3585,30 @@
   .admin-mobile-cards--inventory .admin-table td:nth-child(3)::before { content: 'Variantes'; }
   .admin-mobile-cards--inventory .admin-table td:nth-child(4)::before { content: 'SKU'; }
   .admin-mobile-cards--inventory .admin-table td:nth-child(5)::before { content: 'Historial'; }
+  .admin-mobile-cards--products .admin-table td { padding: 5px 0; text-align: left; }
+  .admin-mobile-cards--products .admin-table td::before { min-width: 108px; }
   .admin-mobile-cards--products .admin-table td:nth-child(1)::before { content: 'Seleccionar'; }
   .admin-mobile-cards--products .admin-table td:nth-child(2)::before { content: 'Producto'; }
-  .admin-mobile-cards--products .admin-table td:nth-child(3)::before { content: 'Stock'; }
-  .admin-mobile-cards--products .admin-table td:nth-child(4)::before { content: 'Precio'; }
-  .admin-mobile-cards--products .admin-table td:nth-child(5)::before { content: 'Promocional'; }
-  .admin-mobile-cards--products .admin-table td:nth-child(6)::before { content: 'Variantes'; }
-  .admin-mobile-cards--products .admin-table td:nth-child(7)::before { content: 'Acciones'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(3)::before { content: 'Estado'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(4)::before { content: 'Stock'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(5)::before { content: 'Precio'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(6)::before { content: 'Promocional'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(7)::before { content: 'Variantes'; }
+  .admin-mobile-cards--products .admin-table td:nth-child(8)::before { content: 'Acciones'; }
+  /* The product cell is the anchor of the row: full width, no caption offset. */
+  .admin-mobile-cards--products .admin-table td:nth-child(2) { margin-bottom: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--nimbus-neutral-surface); }
+  .admin-mobile-cards--products .admin-table td:nth-child(2)::before { content: none; display: none; }
+  .admin-mobile-cards--products .admin-table td:nth-child(8) .admin-productos-actions { justify-content: flex-start; }
+  .admin-mobile-cards--products .admin-table-product-cell { flex-wrap: wrap; }
+  .admin-mobile-cards--coupons .admin-table td { padding: 5px 0; text-align: left; }
+  .admin-mobile-cards--coupons .admin-table td::before { min-width: 104px; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(1)::before { content: 'Código'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(2)::before { content: 'Descuento'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(3)::before { content: 'Mínimo'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(4)::before { content: 'Usos'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(5)::before { content: 'Vigencia'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(6)::before { content: 'Estado'; }
+  .admin-mobile-cards--coupons .admin-table td:nth-child(7)::before { content: 'Acciones'; }
   .admin-categories-responsive { overflow-x: auto; }
   .admin-categories-responsive > * { min-width: 520px; }
   .admin-edit-header, .admin-edit-header-left { flex-wrap: wrap; }

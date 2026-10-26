@@ -1,18 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { VARIANT_COLORS, getVariantColor } from '@/lib/colors';
+import { getVariantColor } from '@/lib/colors';
 
 interface VariantOption {
   id: number;
   variantTypeId: number;
   value: string;
+  colorHex?: string | null;
+  imageUrl?: string | null;
   position: number;
 }
 
 interface VariantType {
   id: number;
   name: string;
+  presentation?: 'text' | 'color' | 'image';
   position: number;
   options: VariantOption[];
 }
@@ -21,6 +24,7 @@ interface Variant {
   id: number;
   name: string;
   price?: number | null;
+  stock?: number | null;
   optionIds?: string[];
   variantTypeId?: number | null;
 }
@@ -33,8 +37,8 @@ interface VariantSelectorProps {
   stockMap?: Record<number, number>;  // NEW: variantId -> stock
 }
 
-function isColorType(typeName: string): boolean {
-  return typeName.toLowerCase() === 'color' || typeName.toLowerCase() === 'colour';
+function isColorPresentation(type?: VariantType): boolean {
+  return type?.presentation === 'color' || (!!type?.name && ['color', 'colour'].includes(type.name.toLowerCase()));
 }
 
 export default function VariantSelector({
@@ -59,16 +63,20 @@ export default function VariantSelector({
       .catch(() => setLoading(false));
   }, []);
 
-  // Older variants may not have variantTypeId persisted; derive it from their option.
-  const getVariantTypeId = (variant: Variant) => {
-    if (variant.variantTypeId) return variant.variantTypeId;
-    const optionId = variant.optionIds?.[0];
-    return variantTypeIdsByOption.get(Number(optionId));
+  // A combination can contain options from multiple types (e.g. Color + Talle).
+  // The relation attached to the first option is not enough to classify it.
+  const getVariantTypeIds = (variant: Variant) => {
+    const derivedIds = (variant.optionIds || [])
+      .map((optionId) => variantTypeIdsByOption.get(Number(optionId)))
+      .filter((id): id is number => Boolean(id));
+    return Array.from(new Set(derivedIds.length > 0
+      ? derivedIds
+      : variant.variantTypeId ? [variant.variantTypeId] : []));
   };
   const variantTypeIdsByOption = new Map(
     variantTypes.flatMap((type) => type.options.map((option) => [option.id, option.variantTypeId] as const))
   );
-  const variantTypeIds = new Set(variants.map(getVariantTypeId).filter(Boolean));
+  const variantTypeIds = new Set(variants.flatMap(getVariantTypeIds));
   const hasMultipleTypes = variantTypeIds.size > 1;
 
   // When all options selected, find matching variant
@@ -81,18 +89,36 @@ export default function VariantSelector({
     }) || null;
   };
 
-  const handleOptionSelect = (variantTypeId: number, optionId: number, optionValue: string) => {
-    setSelectedOptions((prev) => {
-      const updated = { ...prev, [variantTypeId]: optionId };
-      const match = findMatchingVariant(updated);
-      if (match) {
-        onSelect(match);
-        if (onPriceChange && match.price != null) {
-          onPriceChange(match.price);
-        }
-      }
-      return updated;
-    });
+  const handleOptionSelect = (variantTypeId: number, optionId: number) => {
+    const updated = { ...selectedOptions, [variantTypeId]: optionId };
+    setSelectedOptions(updated);
+    const match = findMatchingVariant(updated);
+    onSelect(match);
+    if (match && onPriceChange && match.price != null) {
+      onPriceChange(match.price);
+    }
+  };
+
+  const isSelectionOutOfStock = (options: Record<number, number | null>) => {
+    const selectedIds = Object.values(options).filter((id): id is number => id != null);
+    if (selectedIds.length === 0) return false;
+
+    const matchingVariants = variants.filter((variant) =>
+      selectedIds.every((selectedId) => variant.optionIds?.map(Number).includes(selectedId))
+    );
+    return matchingVariants.length > 0 && matchingVariants.every(isVariantOutOfStock);
+  };
+
+  const isOptionOutOfStock = (typeId: number, optionId: number) =>
+    isSelectionOutOfStock({ ...selectedOptions, [typeId]: optionId });
+
+  const isVariantOutOfStock = (variant: Variant) => (stockMap[variant.id] ?? variant.stock) === 0;
+  const stockLabel = (name: string, outOfStock: boolean) => outOfStock ? `${name} · Sin stock` : name;
+  const optionAriaLabel = (name: string, outOfStock: boolean) =>
+    outOfStock ? `${name}, sin stock para la combinación seleccionada` : name;
+  const setSingleVariant = (variant: Variant) => {
+    onSelect(variant);
+    if (onPriceChange && variant.price != null) onPriceChange(variant.price);
   };
 
   // Init: pre-select first variant's options if available
@@ -121,9 +147,10 @@ export default function VariantSelector({
 
   if (!hasMultipleTypes) {
     // ── Single type: show color swatches or text buttons ──────────
-    const typeId = variants[0] ? getVariantTypeId(variants[0]) : undefined;
+    const typeId = variants[0] ? getVariantTypeIds(variants[0])[0] : undefined;
     const type = variantTypes.find((t) => t.id === typeId);
-    const isColor = type ? isColorType(type.name) : false;
+    const isColor = isColorPresentation(type);
+    const isImage = type?.presentation === 'image';
 
     const selectedVariant = variants.find((v) => v.id === selectedVariantId);
 
@@ -135,20 +162,19 @@ export default function VariantSelector({
           </h3>
           <div className="detalle-variant-options">
             {variants.map((variant) => {
-              const outOfStock = (stockMap[variant.id] ?? -1) === 0;
+              const outOfStock = isVariantOutOfStock(variant);
+              const option = type?.options.find((candidate) => candidate.id === Number(variant.optionIds?.[0]));
               return (
                 <button
                   key={variant.id}
-                  className={`detalle-variant-btn ${selectedVariantId === variant.id ? 'detalle-variant-btn-active' : ''}`}
-                  title={outOfStock ? 'Sin stock' : variant.name}
-                  style={{ backgroundColor: getVariantColor(variant.name) }}
-                  onClick={() => {
-                    if (outOfStock) return;
-                    onSelect(variant);
-                    if (onPriceChange && variant.price != null) onPriceChange(variant.price);
-                  }}
-                  aria-label={variant.name}
-                  disabled={outOfStock}
+                  className={`detalle-variant-btn ${selectedVariantId === variant.id ? 'detalle-variant-btn-active' : ''} ${outOfStock ? 'detalle-variant-btn-agotado' : ''}`}
+                  title={stockLabel(variant.name, outOfStock)}
+                   style={{
+                     backgroundColor: option?.colorHex || getVariantColor(variant.name),
+                     ...(isImage && option?.imageUrl ? { backgroundImage: `url(${option.imageUrl})`, backgroundSize: 'cover' } : {}),
+                   }}
+                  onClick={() => setSingleVariant(variant)}
+                  aria-label={optionAriaLabel(variant.name, outOfStock)}
                 />
               );
             })}
@@ -165,20 +191,16 @@ export default function VariantSelector({
         </h3>
         <div className="detalle-variant-options" style={{ gap: '6px' }}>
           {variants.map((variant) => {
-            const outOfStock = (stockMap[variant.id] ?? -1) === 0;
+            const outOfStock = isVariantOutOfStock(variant);
             return (
               <button
                 key={variant.id}
                 className={`detalle-variant-text-btn ${selectedVariantId === variant.id ? 'active' : ''} ${outOfStock ? 'detalle-variant-text-btn-agotado' : ''}`}
-                onClick={() => {
-                  if (outOfStock) return;
-                  onSelect(variant);
-                  if (onPriceChange && variant.price != null) onPriceChange(variant.price);
-                }}
-                disabled={outOfStock}
-                title={outOfStock ? 'Sin stock' : variant.name}
+                onClick={() => setSingleVariant(variant)}
+                title={stockLabel(variant.name, outOfStock)}
+                aria-label={optionAriaLabel(variant.name, outOfStock)}
               >
-                {variant.name}
+                {stockLabel(variant.name, outOfStock)}
               </button>
             );
           })}
@@ -195,7 +217,8 @@ export default function VariantSelector({
   return (
     <div className="detalle-variants-multi">
       {typesUsed.map((type) => {
-        const isColor = isColorType(type.name);
+        const isColor = isColorPresentation(type);
+        const isImage = type.presentation === 'image';
         // Get options that exist in this product's variants
         const optionIdsUsed = new Set(
           variants.flatMap((v) => v.optionIds || []).map((oid) => parseInt(oid))
@@ -203,7 +226,7 @@ export default function VariantSelector({
         const typeOptions = type.options.filter((o) => optionIdsUsed.has(o.id));
 
         return (
-          <div key={type.id} className="detalle-variant-type-row">
+          <div key={type.id} className="detalle-variant-type-row detalle-variant-selector-card">
             <h3 className="detalle-variant-label">
               {type.name.toUpperCase()}:{' '}
               <span className="font-normal">
@@ -212,47 +235,48 @@ export default function VariantSelector({
                   : `Elegí ${type.name}`}
               </span>
             </h3>
-            <div className="detalle-variant-options" style={{ gap: isColor ? '8px' : '6px' }}>
-              {typeOptions.map((opt) => {
-                const isSelected = selectedOptions[type.id] === opt.id;
-                // For multi-type: option is out of stock if all variants with that option are out
-                const variantsWithOption = variants.filter((v) =>
-                  v.optionIds?.map((oid) => parseInt(oid)).includes(opt.id)
-                );
-                const allOutOfStock = variantsWithOption.length > 0 &&
-                  variantsWithOption.every((v) => (stockMap[v.id] ?? -1) === 0);
-                if (isColor) {
+            {isColor || isImage ? (
+              <div className="detalle-variant-options detalle-variant-color-options" style={{ gap: '8px' }}>
+                {typeOptions.map((opt) => {
+                  const isSelected = selectedOptions[type.id] === opt.id;
+                  const outOfStock = isOptionOutOfStock(type.id, opt.id);
                   return (
                     <button
                       key={opt.id}
-                      className={`detalle-variant-btn ${isSelected ? 'detalle-variant-btn-active' : ''}`}
-                      title={allOutOfStock ? 'Sin stock' : opt.value}
-                      style={{ backgroundColor: getVariantColor(opt.value) }}
-                      onClick={() => {
-                        if (allOutOfStock) return;
-                        handleOptionSelect(type.id, opt.id, opt.value);
+                      className={`detalle-variant-btn ${isSelected ? 'detalle-variant-btn-active' : ''} ${outOfStock ? 'detalle-variant-btn-agotado' : ''}`}
+                      title={stockLabel(opt.value, outOfStock)}
+                      style={{
+                        backgroundColor: opt.colorHex || getVariantColor(opt.value),
+                        ...(isImage && opt.imageUrl ? { backgroundImage: `url(${opt.imageUrl})`, backgroundSize: 'cover' } : {}),
                       }}
-                      aria-label={opt.value}
-                      disabled={allOutOfStock}
+                      onClick={() => handleOptionSelect(type.id, opt.id)}
+                      aria-label={optionAriaLabel(opt.value, outOfStock)}
                     />
                   );
-                }
-                return (
-                  <button
-                    key={opt.id}
-                    className={`detalle-variant-text-btn ${isSelected ? 'active' : ''} ${allOutOfStock ? 'detalle-variant-text-btn-agotado' : ''}`}
-                    onClick={() => {
-                      if (allOutOfStock) return;
-                      handleOptionSelect(type.id, opt.id, opt.value);
-                    }}
-                    disabled={allOutOfStock}
-                    title={allOutOfStock ? 'Sin stock' : opt.value}
-                  >
-                    {opt.value}
-                  </button>
-                );
-              })}
-            </div>
+                })}
+              </div>
+            ) : (
+              <select
+                className="detalle-variant-select"
+                value={selectedOptions[type.id] ?? ''}
+                onChange={(event) => {
+                  const optionId = Number(event.target.value);
+                  const option = typeOptions.find((candidate) => candidate.id === optionId);
+                  if (option) handleOptionSelect(type.id, option.id);
+                }}
+                aria-label={`Elegir ${type.name}`}
+              >
+                <option value="">Elegí {type.name.toLowerCase()}</option>
+                {typeOptions.map((opt) => {
+                  const outOfStock = isOptionOutOfStock(type.id, opt.id);
+                  return (
+                    <option key={opt.id} value={opt.id}>
+                      {stockLabel(opt.value, outOfStock)}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
           </div>
         );
       })}

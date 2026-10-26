@@ -4,12 +4,13 @@ import ProductCard from '@/components/ProductCard';
 import CartDrawer from '@/components/CartDrawer';
 import SocialIcons from '@/components/social/SocialIcons';
 import { db } from '@/lib/db';
-import { products, categories, productCategories, productImages, productVariants, variantOptions, variantTypes } from '@/drizzle/schema';
+import { products, categories, productCategories, productImages, productVariants, productVariantOptions, variantOptions, variantTypes } from '@/drizzle/schema';
 import { eq, desc, asc, and, or, ilike, sql, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import type { ProductCardData } from '@/types/product';
 import type { Metadata } from 'next';
-import { getPaymentMethods } from '@/app/admin/configuracion/actions';
+import { getPaymentMethods, getSettings } from '@/app/admin/configuracion/actions';
+import { getVariantColorMetadata } from '@/lib/products/variant-color-metadata';
 
 export const metadata: Metadata = {
   title: 'Productos - Tendencia Shop',
@@ -88,6 +89,8 @@ async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
         discount: products.discount,
         badge: products.badge,
         hasFreeShipping: products.hasFreeShipping,
+        availableStock: sql<number>`greatest(0, coalesce(${products.stock}, 0) - coalesce(${products.reservedStock}, 0))`,
+        productType: products.productType,
          imageUrl: sql<string | null>`(
            select pi.url from product_images pi
            where pi.product_id = ${products.id}
@@ -141,18 +144,33 @@ async function getProducts(params: Awaited<CatalogPageProps['searchParams']>) {
           name: productVariants.name,
           price: productVariants.price,
           priceOffer: productVariants.priceOffer,
-          optionIds: productVariants.optionIds,
           stock: sql<number>`greatest(0, coalesce(${productVariants.stock}, 0) - coalesce(${productVariants.reservedStock}, 0))`,
         }).from(productVariants).where(and(inArray(productVariants.productId, productIds), eq(productVariants.isVisible, true)))
       : [];
+    const variantRelations = allVariants.length > 0
+      ? await db.select().from(productVariantOptions).where(inArray(productVariantOptions.productVariantId, allVariants.map((variant) => variant.id)))
+      : [];
+    const colorMetadata = await getVariantColorMetadata(allVariants.map((variant) => variant.id));
 
     // Group variants by product
-    const variantsByProduct = new Map<number, typeof allVariants>();
+    const variantsByProduct = new Map<number, Array<(typeof allVariants[number]) & {
+      optionIds: string[];
+      colorName: string | null;
+      colorHex: string | null;
+    }>>();
     for (const v of allVariants) {
       if (!variantsByProduct.has(v.productId)) {
         variantsByProduct.set(v.productId, []);
       }
-      variantsByProduct.get(v.productId)!.push(v);
+      variantsByProduct.get(v.productId)!.push({
+        ...v,
+        colorName: colorMetadata.get(v.id)?.name ?? null,
+        colorHex: colorMetadata.get(v.id)?.colorHex ?? null,
+        optionIds: variantRelations
+          .filter((relation) => relation.productVariantId === v.id)
+          .sort((a, b) => a.position - b.position)
+          .map((relation) => String(relation.variantOptionId)),
+      });
     }
 
     const enriched = result.map(p => ({
@@ -179,26 +197,22 @@ async function getCategories() {
 
 type FilterFacet = { name: string; count: number; hex?: string };
 
-const COLOR_HEX: Record<string, string> = {
-  rosa: '#FFB6C1', azul: '#4169E1', marrón: '#8B4513', marron: '#8B4513',
-  negro: '#000000', beige: '#F5F5DC', blanco: '#FFFFFF', amarillo: '#FFD700',
-  celeste: '#87CEEB', verde: '#66BB6A', rojo: '#EF5350', gris: '#9E9E9E',
-};
-
 async function getFilterFacets(): Promise<Record<'color' | 'disfraz' | 'tamano', FilterFacet[]>> {
   try {
     const rows = await db
       .select({
         typeName: variantTypes.name,
         value: variantOptions.value,
+        colorHex: variantOptions.colorHex,
         count: sql<number>`count(distinct ${productVariants.productId})::int`,
       })
       .from(variantOptions)
       .innerJoin(variantTypes, eq(variantOptions.variantTypeId, variantTypes.id))
-      .innerJoin(productVariants, sql`${variantOptions.id}::text = any(${productVariants.optionIds})`)
+      .innerJoin(productVariantOptions, eq(productVariantOptions.variantOptionId, variantOptions.id))
+      .innerJoin(productVariants, eq(productVariantOptions.productVariantId, productVariants.id))
       .innerJoin(products, and(eq(productVariants.productId, products.id), eq(products.isVisible, true)))
       .where(eq(productVariants.isVisible, true))
-      .groupBy(variantTypes.name, variantOptions.value)
+      .groupBy(variantTypes.name, variantOptions.value, variantOptions.colorHex)
       .orderBy(variantTypes.name, variantOptions.value);
 
     const facets: Record<'color' | 'disfraz' | 'tamano', FilterFacet[]> = { color: [], disfraz: [], tamano: [] };
@@ -207,7 +221,7 @@ async function getFilterFacets(): Promise<Record<'color' | 'disfraz' | 'tamano',
       const key = type.includes('color') ? 'color' : type.includes('disfraz') ? 'disfraz' : type.includes('taman') || type.includes('talle') ? 'tamano' : null;
       if (!key) continue;
       const name = row.value;
-      facets[key].push({ name, count: row.count, ...(key === 'color' ? { hex: COLOR_HEX[name.toLowerCase()] || '#9E9E9E' } : {}) });
+       facets[key].push({ name, count: row.count, ...(key === 'color' ? { hex: row.colorHex || '#9E9E9E' } : {}) });
     }
     return facets;
   } catch (error) {
@@ -221,17 +235,32 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
   const { products: productsList, totalPages, currentPage } = await getProducts(params);
   const categoriesList = await getCategories();
   const facets = await getFilterFacets();
-  const paymentMethods = await getPaymentMethods();
+  // C4-TRACE: pass the configured contact to catalog cards for price consultation.
+  const [paymentMethods, storeSettings] = await Promise.all([getPaymentMethods(), getSettings()]);
   const showTransferPayment = paymentMethods.some((method) => method.isActive && method.id === 'transferencia');
-  const buildFilterHref = (key: string, value?: string) => {
+  const buildFilterHref = (key: string, value?: string, removeKeys: string[] = []) => {
     const next = new URLSearchParams();
     for (const [param, paramValue] of Object.entries(params)) {
-      if (paramValue && param !== 'page' && param !== key) next.set(param, paramValue);
+      if (paramValue && param !== 'page' && param !== key && !removeKeys.includes(param)) next.set(param, paramValue);
     }
     if (value) next.set(key, value);
     const query = next.toString();
     return `/productos/${query ? `?${query}` : ''}`;
   };
+
+  const activeFilters = [
+    params.categoria && {
+      label: `Categoría: ${categoriesList.find((category) => category.slug === params.categoria)?.name || params.categoria}`,
+      href: buildFilterHref('categoria'),
+    },
+    params.color && { label: `Color: ${params.color}`, href: buildFilterHref('color') },
+    params.disfraz && { label: `Disfraz: ${params.disfraz}`, href: buildFilterHref('disfraz') },
+    params.tamano && { label: `Tamaño: ${params.tamano}`, href: buildFilterHref('tamano') },
+    (params.precio_desde || params.precio_hasta) && {
+      label: `Precio: ${params.precio_desde ? `$${params.precio_desde}` : 'sin mínimo'} – ${params.precio_hasta ? `$${params.precio_hasta}` : 'sin máximo'}`,
+      href: buildFilterHref('precio_desde', undefined, ['precio_hasta']),
+    },
+  ].filter(Boolean) as Array<{ label: string; href: string }>;
 
   return (
     <>
@@ -265,6 +294,23 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
           <button type="submit" className="catalogo-price-btn">Aplicar</button>
         </form>
 
+        {activeFilters.length > 0 && (
+          <section className="catalogo-active-filters" aria-label="Filtros activos">
+            <div className="catalogo-active-filters-header">
+              <span className="catalogo-active-filters-title">Filtros activos</span>
+              <Link href="/productos/" className="catalogo-active-filters-clear">Limpiar todos</Link>
+            </div>
+            <div className="catalogo-active-filters-list">
+              {activeFilters.map((filter) => (
+                <Link key={filter.label} href={filter.href} className="catalogo-active-filter">
+                  <span>{filter.label}</span>
+                  <span aria-hidden="true">×</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="catalogo-layout">
           {/* Sidebar */}
           <aside className="catalogo-sidebar">
@@ -276,7 +322,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                   <li key={cat.id}>
                     <Link
                       href={buildFilterHref('categoria', cat.slug)}
-                      className={`catalogo-sidebar-link ${params.categoria === cat.slug ? 'font-bold text-primary' : ''}`}
+                      className={`catalogo-sidebar-link ${params.categoria === cat.slug ? 'catalogo-filter-option-active' : ''}`}
                     >
                       {cat.name}
                     </Link>
@@ -294,7 +340,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 <h4 className="catalogo-filter-title">Color</h4>
                 <div className="catalogo-filter-options">
                   {facets.color.map((color) => (
-                    <Link key={color.name} href={buildFilterHref('color', color.name)} className="catalogo-color-option">
+                    <Link key={color.name} href={buildFilterHref('color', color.name)} className={`catalogo-color-option ${params.color === color.name ? 'catalogo-filter-option-active' : ''}`}>
                       <span className="catalogo-color-dot" style={{ backgroundColor: color.hex }} />
                       <span className="catalogo-color-name">{color.name}</span>
                       <span className="catalogo-color-count">({color.count})</span>
@@ -309,7 +355,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 <h4 className="catalogo-filter-title">Disfraz</h4>
                 <div className="catalogo-filter-options catalogo-tags">
                   {facets.disfraz.map((item) => (
-                    <Link key={item.name} href={buildFilterHref('disfraz', item.name)} className="catalogo-tag-option">
+                    <Link key={item.name} href={buildFilterHref('disfraz', item.name)} className={`catalogo-tag-option ${params.disfraz === item.name ? 'catalogo-filter-option-active' : ''}`}>
                       <span className="catalogo-tag">{item.name} ({item.count})</span>
                     </Link>
                   ))}
@@ -322,7 +368,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 <h4 className="catalogo-filter-title">Tamaño</h4>
                 <div className="catalogo-filter-options catalogo-tags">
                   {facets.tamano.map((item) => (
-                    <Link key={item.name} href={buildFilterHref('tamano', item.name)} className="catalogo-tag-option">
+                    <Link key={item.name} href={buildFilterHref('tamano', item.name)} className={`catalogo-tag-option ${params.tamano === item.name ? 'catalogo-filter-option-active' : ''}`}>
                       <span className="catalogo-tag">{item.name} ({item.count})</span>
                     </Link>
                   ))}
@@ -362,7 +408,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
             ) : (
               <div className="products-grid products-grid--masonry">
                 {productsList.map((product) => (
-                  <ProductCard key={product.id} {...product} showTransferPayment={showTransferPayment} masonry />
+                  <ProductCard key={product.id} {...product} showTransferPayment={showTransferPayment} whatsappNumber={storeSettings.whatsappNumber} masonry />
                 ))}
               </div>
             )}

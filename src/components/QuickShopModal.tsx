@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useCartStore } from '@/lib/store';
 import { formatPrice } from '@/lib/utils/format';
-import { getPricePresentation } from '@/lib/products/pricing';
+import { getPricePresentation, isSellablePrice } from '@/lib/products/pricing';
+import TrackedWhatsAppLink from '@/components/TrackedWhatsAppLink';
 
 interface Product {
   id: number;
@@ -12,8 +13,20 @@ interface Product {
   slug: string;
   price: number;
   priceOffer?: number | null;
+  transferPrice?: number | null;
   imageUrl: string | null;
-  variants?: Array<{ id: number; name: string; price?: number | null; priceOffer?: number | null }>;
+  availableStock?: number | null;
+  productType?: string | null;
+  whatsappNumber?: string;
+  variants?: Array<{
+    id: number;
+    name: string;
+    price?: number | null;
+    priceOffer?: number | null;
+    stock?: number | null;
+    colorName?: string | null;
+    colorHex?: string | null;
+  }>;
 }
 
 interface QuickShopModalProps {
@@ -69,6 +82,8 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
   const handleAddToCart = () => {
     const variant = product.variants?.find(v => v.id === selectedVariant);
     const finalPrice = getPricePresentation({ regularPrice: product.price, offerPrice: product.priceOffer, variantRegularPrice: variant?.price, variantOfferPrice: variant?.priceOffer }).finalPrice ?? 0;
+    const availableStock = product.productType === 'digital' ? null : variant?.stock ?? product.availableStock ?? null;
+    if (!isSellablePrice(finalPrice) || availableStock === 0 || (availableStock != null && quantity > availableStock)) return;
 
     addItem({
       id: product.id,
@@ -78,7 +93,9 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
       imageUrl: product.imageUrl,
       variant: variant?.name,
       variantId: selectedVariant,
+      transferPrice: variant ? null : product.transferPrice ?? null,
       quantity,
+      availableStock,
     });
 
     setAdded(true);
@@ -88,8 +105,20 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
   };
 
   const selectedVariantData = product.variants?.find(v => v.id === selectedVariant);
+  const tracksStock = product.productType !== 'digital';
+  const availableStock = tracksStock
+    ? selectedVariantData?.stock ?? product.availableStock ?? null
+    : null;
+  const isOutOfStock = availableStock === 0;
   const presentation = getPricePresentation({ regularPrice: product.price, offerPrice: product.priceOffer, variantRegularPrice: selectedVariantData?.price, variantOfferPrice: selectedVariantData?.priceOffer });
   const finalPrice = presentation.finalPrice ?? 0;
+  // C4-TRACE: Quick Shop never renders a zero amount or permits adding it to the cart.
+  const hasSellablePrice = isSellablePrice(presentation.finalPrice);
+  const normalizedWhatsappNumber = (product.whatsappNumber ?? '').replace(/\D/g, '');
+  const consultationMessage = `Hola, quiero consultar el precio de ${product.name}${selectedVariantData ? `, variante ${selectedVariantData.name}` : ''}.`;
+  const consultationHref = normalizedWhatsappNumber
+    ? `https://wa.me/${normalizedWhatsappNumber}?text=${encodeURIComponent(consultationMessage)}`
+    : `/contacto?producto=${encodeURIComponent(product.slug)}&variante=${encodeURIComponent(selectedVariantData?.name ?? '')}`;
 
   return (
     <div className="quickshop-overlay" onClick={onClose}>
@@ -119,7 +148,9 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
             <h3 className="quickshop-title">{product.name}</h3>
 
             <div className="quickshop-price">
-              {presentation.isOnSale ? (
+              {!hasSellablePrice ? (
+                <span className="quickshop-price-current">Consultar precio</span>
+              ) : presentation.isOnSale ? (
                 <>
                   <span className="quickshop-price-original">{formatPrice(presentation.regularPrice ?? product.price)}</span>
                   <span className="quickshop-price-offer">{formatPrice(finalPrice)}</span>
@@ -140,10 +171,11 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
                     <button
                       key={variant.id}
                       className={`quickshop-swatch ${selectedVariant === variant.id ? 'quickshop-swatch-active' : ''}`}
-                      style={{ backgroundColor: getVariantColor(variant.name) }}
+                       style={{ backgroundColor: variant.colorHex || getVariantColor(variant.colorName || variant.name.split('/')[0].trim()) }}
                       onClick={() => setSelectedVariant(variant.id)}
                       title={variant.name}
                       aria-label={variant.name}
+                      disabled={product.productType !== 'digital' && variant.stock === 0}
                     />
                   ))}
                 </div>
@@ -151,7 +183,7 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
             )}
 
             {/* Quantity */}
-            <div className="quickshop-quantity">
+            {hasSellablePrice && <div className="quickshop-quantity">
               <label className="quickshop-quantity-label">Cantidad:</label>
               <div className="quickshop-quantity-controls">
                 <button
@@ -165,16 +197,34 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
                 <button
                   onClick={() => setQuantity(quantity + 1)}
                   className="quickshop-qty-btn"
+                  disabled={availableStock != null && quantity >= availableStock}
                 >
                   +
                 </button>
               </div>
-            </div>
+              {availableStock != null && (
+                <span className="quickshop-stock-available" aria-live="polite">
+                  {availableStock > 0 ? `Disponibles: ${availableStock}` : 'Sin stock'}
+                </span>
+              )}
+            </div>}
 
             {/* Add to cart */}
-            <button
+            {!hasSellablePrice ? (
+              <TrackedWhatsAppLink
+                href={consultationHref}
+                className="quickshop-add-btn quickshop-add-btn--consult"
+                target="_blank"
+                rel="noopener noreferrer"
+                source="price-consultation-quick-shop"
+                productId={product.id}
+              >
+                {normalizedWhatsappNumber ? 'CONSULTAR POR WHATSAPP' : 'CONSULTAR PRECIO'}
+              </TrackedWhatsAppLink>
+            ) : <button
               onClick={handleAddToCart}
               className={`quickshop-add-btn ${added ? 'quickshop-add-btn-success' : ''}`}
+              disabled={isOutOfStock}
             >
               {added ? (
                 <>
@@ -184,9 +234,9 @@ export default function QuickShopModal({ product, onClose }: QuickShopModalProps
                   ¡Agregado!
                 </>
               ) : (
-                'AGREGAR AL CARRITO'
+                isOutOfStock ? 'AGOTADO' : 'AGREGAR AL CARRITO'
               )}
-            </button>
+            </button>}
           </div>
         </div>
       </div>

@@ -7,8 +7,11 @@
 # testing
 /coverage
 /playwright-mcp/
+/.playwright-mcp/
 /test-results/
 *.log
+/*.png
+test-banner.mjs
 
 # next.js
 /.next/
@@ -34,6 +37,9 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+
+# runtime-uploaded product media (kept outside source control)
+/public/product-images/
 
 # vercel
 .vercel

@@ -1,10 +1,13 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { products, categories, productImages, productVariants } from '@/drizzle/schema';
-import { eq, asc } from 'drizzle-orm';
+import { products, categories, productImages, productVariants, productVariantOptions, productCategories } from '@/drizzle/schema';
+import { and, eq, asc } from 'drizzle-orm';
 import DeleteProductButton from '../DeleteProductButton';
 import ImageManager from './ImageManager';
+import ProductPriceSection from './ProductPriceSection';
+import EditProductExtras from '@/components/admin/EditProductExtras';
+import { submitProductEdit } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,19 +20,18 @@ export default async function AdminProductEditPage({ params }: ProductEditPagePr
 
   if (isNaN(productId)) notFound();
 
-  const [product, productImagesData, productVariantsData, allCategories] = await Promise.all([
+  const [product, productImagesData, productVariantsData, variantOptionRows, allCategories, productCategoryRows] = await Promise.all([
     db.select().from(products).where(eq(products.id, productId)).then(r => r[0]),
     db.select().from(productImages).where(eq(productImages.productId, productId)).orderBy(asc(productImages.position)),
-    db.select().from(productVariants).where(eq(productVariants.productId, productId)),
+     db.select().from(productVariants).where(and(eq(productVariants.productId, productId), eq(productVariants.isVisible, true))),
+     db.select().from(productVariantOptions).innerJoin(productVariants, eq(productVariantOptions.productVariantId, productVariants.id)).where(and(eq(productVariants.productId, productId), eq(productVariants.isVisible, true))),
     db.select().from(categories).orderBy(asc(categories.name)),
+    db.select({ categoryId: productCategories.categoryId }).from(productCategories).where(eq(productCategories.productId, productId)),
   ]);
 
-  if (!product) notFound();
+  const currentCategoryIds = productCategoryRows.map(r => r.categoryId);
 
-  const formatPrice = (cents: number | null) => {
-    if (!cents) return '';
-    return String(cents / 100);
-  };
+  if (!product) notFound();
 
   return (
     <div>
@@ -78,7 +80,7 @@ export default async function AdminProductEditPage({ params }: ProductEditPagePr
       </div>
 
       {/* Form */}
-      <form id="product-form">
+      <form id="product-form" action={submitProductEdit.bind(null, productId)}>
         <div className="admin-edit-layout">
           {/* Left column — main content */}
           <div className="admin-edit-main">
@@ -159,140 +161,97 @@ export default async function AdminProductEditPage({ params }: ProductEditPagePr
 
               <div className="admin-radio-group">
                 <label className="admin-radio-label">
-                  <input type="radio" name="productType" value="fisico" defaultChecked />
+                  <input type="radio" name="productType" value="physical" defaultChecked={(product as any).productType === 'physical' || !(product as any).productType} />
                   <span>Físico</span>
                 </label>
                 <label className="admin-radio-label">
-                  <input type="radio" name="productType" value="digital" />
+                  <input type="radio" name="productType" value="digital" defaultChecked={(product as any).productType === 'digital'} />
                   <span>Digital / servicio</span>
                 </label>
               </div>
             </div>
 
-            {/* ──── Categorías ──── */}
+            {/* ──── Peso y dimensiones ──── */}
             <div className="admin-card">
-              <h3 className="admin-card-title admin-card-title-row">
-                Categorías
-                <button type="button" className="admin-ai-btn">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-                  </svg>
-                  Generar con IA
-                </button>
-              </h3>
-
-              <div style={{ display: 'flex', gap: 'var(--nimbus-space-2)', flexWrap: 'wrap', marginBottom: 'var(--nimbus-space-3)' }}>
-                {allCategories.filter(c => c.id === product.categoryId).map(cat => (
-                  <span key={cat.id} className="admin-tag">
-                    {cat.name}
-                    <button type="button" className="admin-tag-remove">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </span>
-                ))}
+              <h3 className="admin-card-title">Peso y dimensiones</h3>
+              <p className="admin-field-hint">Requeridos para calcular el costo de envío.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Peso (g)</label>
+                  <input type="number" name="weight" className="admin-input" min="0"
+                    defaultValue={(product as any).weight ?? ''} placeholder="Ej: 500" />
+                </div>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Largo (cm)</label>
+                  <input type="number" name="length" className="admin-input" min="0"
+                    defaultValue={(product as any).length ?? ''} placeholder="Ej: 20" />
+                </div>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Ancho (cm)</label>
+                  <input type="number" name="width" className="admin-input" min="0"
+                    defaultValue={(product as any).width ?? ''} placeholder="Ej: 15" />
+                </div>
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Alto (cm)</label>
+                  <input type="number" name="height" className="admin-input" min="0"
+                    defaultValue={(product as any).height ?? ''} placeholder="Ej: 10" />
+                </div>
               </div>
-
-              <button type="button" className="admin-link-btn admin-link-btn--primary">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-                Editar categorías
-              </button>
             </div>
 
-            {/* ──── Variantes ──── */}
+            {/* ──── Códigos ──── */}
             <div className="admin-card">
-              <h3 className="admin-card-title">Variantes</h3>
-
-              {/* Properties */}
+              <h3 className="admin-card-title">Códigos</h3>
               <div className="admin-form-group">
-                <label className="admin-form-label">Propiedades</label>
-                <div style={{ display: 'flex', gap: 'var(--nimbus-space-2)', flexWrap: 'wrap', marginBottom: 'var(--nimbus-space-2)' }}>
-                  <span className="admin-tag">
-                    Color: {productVariantsData.map(v => v.name).join(', ') || 'Sin variantes'}
-                  </span>
-                </div>
-                <button type="button" className="admin-link-btn admin-link-btn--primary">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                  Editar propiedades
-                </button>
+                <label className="admin-form-label">SKU</label>
+                <input type="text" name="sku" className="admin-input"
+                  defaultValue={(product as any).sku ?? ''} placeholder="Código interno" />
               </div>
-
-              {/* Variants table */}
-              {productVariantsData && productVariantsData.length > 0 ? (
-                <div className="admin-table-wrapper admin-edit-variants-table">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Variante</th>
-                        <th className="admin-productos-th-stock">Stock</th>
-                        <th className="admin-productos-th-price">Precio</th>
-                        <th className="admin-productos-th-price">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productVariantsData.map((v) => (
-                        <tr key={v.id}>
-                          <td>
-                            <div className="admin-edit-variant-cell">
-                              <div className="admin-edit-variant-thumb">
-                                {productImagesData[0] ? (
-                                  <img src={productImagesData[0].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  <span style={{ fontSize: 12 }}>📷</span>
-                                )}
-                              </div>
-                              <span className="admin-edit-variant-name">{v.name}</span>
-                            </div>
-                          </td>
-                          <td className="admin-productos-td-center">
-                            {v.stock != null && v.stock > 0 ? (
-                              <span className="admin-productos-stock-value">{v.stock}</span>
-                            ) : (
-                              <span className="admin-productos-stock-empty">Sin stock</span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="admin-edit-price-row">
-                              <span className="admin-edit-price-prefix">$</span>
-                              <span className="admin-productos-price-value">
-                                {v.price ? (v.price / 100).toLocaleString('es-AR') : '—'}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="admin-productos-actions">
-                              <button type="button" className="admin-btn admin-btn-ghost admin-btn-icon" title="Editar">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                              </button>
-                              <button type="button" className="admin-btn admin-btn-ghost admin-btn-icon" title="Eliminar" style={{ color: 'var(--nimbus-danger)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polyline points="3 6 5 6 21 6" />
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="admin-edit-variant-empty">
-                  Este producto no tiene variantes.
-                </div>
-              )}
+              <div className="admin-form-group" style={{ marginBottom: 0 }}>
+                <label className="admin-form-label">Código de barras</label>
+                <input type="text" name="barcode" className="admin-input"
+                  defaultValue={(product as any).barcode ?? ''} placeholder="EAN, UPC, ISBN..." />
+              </div>
             </div>
+
+            {/* ──── SEO ──── */}
+            <div className="admin-card">
+              <h3 className="admin-card-title">SEO</h3>
+              <div className="admin-form-group">
+                <label className="admin-form-label">Título SEO</label>
+                <input type="text" name="seoTitle" className="admin-input"
+                  defaultValue={(product as any).seoTitle ?? ''}
+                  placeholder="Título para buscadores (70 caracteres)" />
+              </div>
+              <div className="admin-form-group" style={{ marginBottom: 0 }}>
+                <label className="admin-form-label">Descripción SEO</label>
+                <textarea name="seoDescription" className="admin-input" rows={3}
+                  defaultValue={(product as any).seoDescription ?? ''}
+                  placeholder="Descripción para Google y redes sociales (160 caracteres)"
+                  style={{ resize: 'vertical' }} />
+              </div>
+            </div>
+
+            {/* ──── Categorías y Variantes (editor interactivo) ──── */}
+            <EditProductExtras
+              productId={product.id}
+              currentCategoryIds={currentCategoryIds}
+              categories={allCategories}
+              existingVariants={productVariantsData.map((v) => ({
+                id: v.id,
+                name: v.name,
+                stock: v.stock,
+                price: v.price,
+                priceOffer: v.priceOffer,
+                imageUrl: v.imageUrl,
+                optionIds: variantOptionRows
+                  .filter((row) => row.product_variant_options.productVariantId === v.id)
+                  .sort((a, b) => a.product_variant_options.position - b.product_variant_options.position)
+                  .map((row) => String(row.product_variant_options.variantOptionId)),
+                isVisible: v.isVisible,
+              }))}
+              productImages={productImagesData.map((image) => ({ id: image.id, url: image.url, alt: image.alt }))}
+            />
 
             {/* ──── SEO y búsqueda en la tienda ──── */}
             <div className="admin-card">
@@ -414,29 +373,18 @@ export default async function AdminProductEditPage({ params }: ProductEditPagePr
             <div className="admin-card">
               <h3 className="admin-card-title admin-card-title--sm">Precio</h3>
 
-              <div className="admin-form-group">
-                <label className="admin-form-label">Precio</label>
-                <div className="admin-edit-price-row">
-                  <span className="admin-edit-price-prefix">$</span>
-                  <input type="number" className="admin-input" defaultValue={formatPrice(product.price)} name="price" />
-                </div>
-              </div>
-
-              <div className="admin-form-group">
-                <label className="admin-form-label">Precio de oferta</label>
-                <div className="admin-edit-price-row">
-                  <span className="admin-edit-price-prefix">$</span>
-                  <input type="number" className="admin-input" defaultValue={formatPrice(product.priceOffer)} name="priceOffer" />
-                </div>
-              </div>
-
-              <div className="admin-form-group" style={{ marginBottom: 0 }}>
-                <label className="admin-form-label">Precio transferencia</label>
-                <div className="admin-edit-price-row">
-                  <span className="admin-edit-price-prefix">$</span>
-                  <input type="number" className="admin-input" defaultValue={formatPrice(product.priceTransfer)} name="priceTransfer" />
-                </div>
-              </div>
+              <ProductPriceSection
+                formId="product-form"
+                price={product.price}
+                priceOffer={product.priceOffer}
+                priceTransfer={product.priceTransfer}
+                hasVariants={productVariantsData.length > 0}
+                inheritedVariantCount={productVariantsData.filter((variant) => variant.price == null).length}
+                customVariantCount={productVariantsData.filter((variant) => variant.price != null).length}
+                productType={product.productType}
+                stock={product.stock}
+                reservedStock={product.reservedStock}
+              />
             </div>
 
             {/* Envío */}
@@ -444,9 +392,25 @@ export default async function AdminProductEditPage({ params }: ProductEditPagePr
               <h3 className="admin-card-title admin-card-title--sm">Envío</h3>
 
               <label className="admin-checkbox-label">
-                <input type="checkbox" />
+                <input type="checkbox" name="hasFreeShipping" defaultChecked={product.hasFreeShipping} />
                 <span>Este producto tiene envío gratis</span>
               </label>
+            </div>
+
+            {/* Otros */}
+            <div className="admin-card">
+              <h3 className="admin-card-title admin-card-title--sm">Otros</h3>
+
+              <div className="admin-form-group" style={{ marginBottom: 0 }}>
+                <label className="admin-form-label">Badge</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  name="badge"
+                  defaultValue={product.badge || ''}
+                  placeholder="Ej: Nuevo, Oferta, Edición limitada"
+                />
+              </div>
             </div>
 
             {/* Guardar / Cancelar */}

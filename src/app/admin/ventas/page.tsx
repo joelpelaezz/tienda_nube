@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { orders, orderItems, customers } from '@/drizzle/schema';
-import { eq, sql, desc, ilike, and, or, count } from 'drizzle-orm';
+import { eq, sql, desc, ilike, and, or, count, inArray } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,12 +34,12 @@ async function getOrdersData(page: number, perPage: number, search: string, stat
       'por-cobrar': ['pending', 'confirmed'],
       'por-empaquetar': ['packed'],
       'por-enviar': ['shipped'],
-      'por-retirar': [],
+      'por-retirar': ['ready-for-pickup'],
       'por-archivar': ['delivered'],
     };
     const statuses = statusMap[statusFilter] || [statusFilter];
     if (statuses.length > 0) {
-      conditions.push(eq(orders.status, statuses[0]));
+      conditions.push(inArray(orders.status, statuses));
     }
   }
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -220,7 +220,7 @@ export default async function VentasPage({ searchParams }: VentasPageProps) {
           </p>
         </div>
       ) : (
-        <div className="admin-table-container">
+         <div className="admin-table-container admin-mobile-cards admin-mobile-cards--sales">
           <table className="admin-table">
             <thead>
               <tr>
@@ -313,7 +313,7 @@ export default async function VentasPage({ searchParams }: VentasPageProps) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <a href="#">Más sobre ventas</a>
+        <span style={{ color: 'var(--color-text-muted)', cursor: 'default' }}>Más sobre ventas</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
         </svg>

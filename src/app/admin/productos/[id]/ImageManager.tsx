@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import {
   DndContext,
   closestCenter,
@@ -18,9 +19,10 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { uploadProductImage, deleteProductImage, setImagePosition, deleteMultipleImages } from '../actions';
+import { uploadProductImage, deleteProductImage, setImagePosition, setImageAsPrimary, deleteMultipleImages } from '../actions';
 import { validateImageUrl } from '@/lib/image-validation';
 import { uploadFile } from '@/lib/storage';
+import ImageUploadAdvisor from '@/components/admin/ImageUploadAdvisor';
 
 interface ImageManagerProps {
   productId: number;
@@ -41,11 +43,13 @@ interface SortableImageProps {
   };
   index: number;
   isSelected: boolean;
+  isPrimary: boolean;
   onSelect: (id: number) => void;
   onDelete: (id: number) => void;
+  onSetPrimary: (id: number) => void;
 }
 
-function SortableImage({ image, index, isSelected, onSelect, onDelete }: SortableImageProps) {
+function SortableImage({ image, index, isSelected, isPrimary, onSelect, onDelete, onSetPrimary }: SortableImageProps) {
   const {
     attributes,
     listeners,
@@ -69,15 +73,39 @@ function SortableImage({ image, index, isSelected, onSelect, onDelete }: Sortabl
       {...attributes}
     >
       <div className="admin-edit-image-inner" {...listeners}>
-        <img
-          src={image.url}
-          alt={image.alt || 'Producto'}
-        />
+        {image.url ? (
+          <Image
+            src={image.url}
+            alt={image.alt || 'Producto'}
+            width={300}
+            height={300}
+            unoptimized
+            onError={(e) => {
+              const img = e.currentTarget as HTMLImageElement;
+              img.style.display = 'none';
+            }}
+          />
+        ) : (
+          <div className="admin-edit-image-no-url">📷</div>
+        )}
         {index === 0 && (
           <div className="admin-edit-image-label">Principal</div>
         )}
       </div>
       <div className="admin-edit-image-actions">
+        {!isPrimary && (
+          <button
+            type="button"
+            className="admin-edit-image-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetPrimary(image.id);
+            }}
+            title="Marcar como principal"
+          >
+            ★
+          </button>
+        )}
         <label className="admin-edit-image-checkbox">
           <input
             type="checkbox"
@@ -107,6 +135,10 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
   const [imageUrl, setImageUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
+
+  // Temporary negative ID counter for optimistic updates (avoids integer overflow)
+  const tempIdRef = useRef(-1);
+  const nextTempId = () => tempIdRef.current--;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -164,6 +196,23 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
     }
   }, [productId]);
 
+  const handleSetPrimary = useCallback(async (id: number) => {
+    console.log('[ImageManager] handleSetPrimary called with id:', id);
+    try {
+      await setImageAsPrimary(productId, id);
+      // Optimistically update local state to reflect new primary
+      setLocalImages((prev) => {
+        const updated = prev.map((img) => ({
+          ...img,
+          position: img.id === id ? 0 : (img.position ?? 0) + 1,
+        }));
+        return updated;
+      });
+    } catch (error) {
+      console.error('Error setting primary image:', error);
+    }
+  }, [productId]);
+
   const handleBulkDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
     try {
@@ -175,22 +224,23 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
     }
   }, [selectedIds, productId]);
 
-  const handleFileUpload = useCallback(async (files: FileList | null) => {
+  const handleFileUpload = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
+    const selectedFiles = Array.from(files);
 
     setUploading(true);
     setUploadProgress('');
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
         setUploadProgress(`${i + 1}/${files.length}`);
         const result = await uploadFile(file, productId);
-        await uploadProductImage(productId, result.url, 'file', file.name);
+        const inserted = await uploadProductImage(productId, result.url, 'file', file.name);
         setLocalImages((prev) => [
           ...prev,
           {
-            id: Date.now() + i,
+            id: inserted.id,
             url: result.url,
             alt: file.name,
             position: prev.length + i,
@@ -217,14 +267,14 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
     setUrlError('');
 
     try {
-      await uploadProductImage(productId, imageUrl.trim(), 'url');
-      setLocalImages([
-        ...localImages,
+      const inserted = await uploadProductImage(productId, imageUrl.trim(), 'url');
+      setLocalImages((prev) => [
+        ...prev,
         {
-          id: Date.now(),
+          id: inserted.id,
           url: imageUrl.trim(),
           alt: null,
-          position: localImages.length,
+          position: prev.length,
         },
       ]);
       setImageUrl('');
@@ -279,32 +329,11 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
       )}
 
       {/* Upload Zone */}
-      <div className="admin-upload-zone">
-        <input
-          type="file"
-          id="file-upload"
-          className="admin-upload-input"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          multiple
-          onChange={(e) => handleFileUpload(e.target.files)}
-          disabled={uploading}
-        />
-        <label htmlFor="file-upload" className="admin-upload-label">
-          {uploading ? (
-            <>Subiendo... {uploadProgress}</>
-          ) : (
-            <>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span>Arrastrá fotos aquí o hacé click para seleccionar</span>
-              <span className="admin-upload-hint">JPEG, PNG, GIF, WebP hasta 10MB</span>
-            </>
-          )}
-        </label>
-      </div>
+      <ImageUploadAdvisor
+        disabled={uploading}
+        onFilesReady={(files) => { if (files.length > 0) void handleFileUpload(files); }}
+        id="file-upload"
+      />
 
       {/* Image Grid */}
       {sortedImages.length > 0 && (
@@ -321,8 +350,10 @@ export default function ImageManager({ productId, images }: ImageManagerProps) {
                   image={img}
                   index={index}
                   isSelected={selectedIds.has(img.id)}
+                  isPrimary={index === 0}
                   onSelect={handleSelect}
                   onDelete={handleDelete}
+                  onSetPrimary={handleSetPrimary}
                 />
               ))}
             </div>

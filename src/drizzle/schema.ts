@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, index, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, index, unique, jsonb } from 'drizzle-orm/pg-core';
 
 // ──────────────────────────────────────────────────────
 // NextAuth.js Tables
@@ -80,6 +80,8 @@ export const products = pgTable('products', {
   badge: text('badge'),
   hasFreeShipping: boolean('has_free_shipping').notNull().default(false),
   isVisible: boolean('is_visible').default(true),
+  stock: integer('stock').notNull().default(0),
+  reservedStock: integer('reserved_stock').notNull().default(0),
   // Shipping / physical
   weight: integer('weight'),          // grams
   length: integer('length'),         // cm
@@ -135,7 +137,6 @@ export const productVariants = pgTable('product_variants', {
   imageUrl: text('image_url'),
   stock: integer('stock').default(0),
   reservedStock: integer('reserved_stock').default(0),  // Stock locked by pending orders
-  optionIds: text('option_ids').array(),
   variantTypeId: integer('variant_type_id').references(() => variantTypes.id),
   // Per-variant shipping
   weight: integer('weight'),
@@ -147,6 +148,17 @@ export const productVariants = pgTable('product_variants', {
   barcode: text('barcode'),
   isVisible: boolean('is_visible').default(true),
 });
+
+// Normalized relationship between a product variant and its selected options.
+export const productVariantOptions = pgTable('product_variant_options', {
+  productVariantId: integer('product_variant_id').notNull().references(() => productVariants.id, { onDelete: 'cascade' }),
+  variantOptionId: integer('variant_option_id').notNull().references(() => variantOptions.id, { onDelete: 'restrict' }),
+  position: integer('position').notNull().default(0),
+}, (table) => ({
+  primaryKey: primaryKey({ columns: [table.productVariantId, table.variantOptionId] }),
+  variantOptionIdx: index('product_variant_options_option_idx').on(table.variantOptionId),
+  uniquePosition: unique('product_variant_options_variant_position_unique').on(table.productVariantId, table.position),
+}));
 
 // ──────────────────────────────────────────────────────
 // Stock Movements
@@ -162,6 +174,19 @@ export const stockMovements = pgTable('stock_movements', {
 }, (table) => ({
   variantIdIdx: index('stock_movements_variant_id_idx').on(table.variantId),
   createdAtIdx: index('stock_movements_created_at_idx').on(table.createdAt),
+}));
+
+export const productStockMovements = pgTable('product_stock_movements', {
+  id: serial('id').primaryKey(),
+  productId: integer('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  movementType: text('movement_type').notNull(),
+  quantity: integer('quantity').notNull(),
+  stockAfter: integer('stock_after').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  createdBy: integer('created_by').references(() => users.id),
+}, (table) => ({
+  productIdIdx: index('product_stock_movements_product_id_idx').on(table.productId),
+  createdAtIdx: index('product_stock_movements_created_at_idx').on(table.createdAt),
 }));
 
 // ──────────────────────────────────────────────────────
@@ -323,6 +348,7 @@ export const orderItems = pgTable('order_items', {
   orderId: integer('order_id').notNull(),
   productId: integer('product_id'),
   variantId: integer('variant_id'),  // NEW: references productVariants.id
+  stockReserved: boolean('stock_reserved').notNull().default(false),
   productName: text('product_name').notNull(),
   quantity: integer('quantity').notNull().default(1),
   unitPrice: integer('unit_price').notNull(),

@@ -406,6 +406,69 @@
   color: var(--ch-primary);
 }
 
+.ch-coupon-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ch-coupon-form .ch-input {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.ch-coupon-error {
+  font-size: 11px;
+  color: #dc2626;
+}
+
+.ch-coupon-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ch-coupon-actions .ch-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.ch-coupon-applied {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: var(--ch-radius-sm);
+  padding: 8px 12px;
+}
+
+.ch-coupon-applied-code {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #16a34a;
+}
+
+.ch-coupon-remove {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.ch-coupon-remove:hover {
+  color: #dc2626;
+}
+
 /* ─── Buttons ─── */
 .ch-btn {
   display: inline-flex;
@@ -451,6 +514,31 @@
 .ch-btn-secondary:hover {
   border-color: var(--ch-primary);
   color: var(--ch-primary);
+}
+
+/* ─── WhatsApp ─── */
+.ch-whatsapp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 20px;
+  background: #25D366;
+  color: white;
+  border-radius: var(--ch-radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--ch-font);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: background 0.15s;
+}
+
+.ch-whatsapp-btn:hover {
+  background: #1fb855;
 }
 
 /* ─── Error ─── */

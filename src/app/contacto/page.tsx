@@ -4,13 +4,32 @@ import CartDrawer from '@/components/CartDrawer';
 import SocialIcons from '@/components/social/SocialIcons';
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { getSettings } from '@/app/admin/configuracion/actions';
+import ContactForm from '@/components/ContactForm';
+import TrackedWhatsAppLink from '@/components/TrackedWhatsAppLink';
 
 export const metadata: Metadata = {
   title: 'Contacto - Tendencia Shop',
   description: 'Contactanos para consultas y pedidos.',
 };
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const settings = await getSettings();
+
+  const storeName = settings.storeName || 'Nuestra Tienda';
+  // C4-TRACE: do not display a placeholder as a real store email when none is configured.
+  const storeEmail = settings.storeEmail;
+  const storePhone = settings.storePhone || '';
+  const storeAddress = settings.storeAddress || '';
+  const whatsappNumber = settings.whatsappNumber || '';
+
+  const phoneDisplay = storePhone || whatsappNumber;
+  const phoneHref = storePhone
+    ? `tel:${storePhone.replace(/[^\d+]/g, '')}`
+    : whatsappNumber
+      ? `https://wa.me/${whatsappNumber.replace(/\D/g, '')}`
+      : '';
+
   return (
     <>
       <Header />
@@ -32,36 +51,50 @@ export default function ContactPage() {
           {/* Columna izquierda - Info de contacto */}
           <div className="contacto-info">
             <h2 className="contacto-info-title">CONTACTANOS</h2>
-            <p className="contacto-info-subtitle">Asesor de Ventas</p>
+            <p className="contacto-info-subtitle">{storeName}</p>
 
             <div className="contacto-info-items">
-              <div className="contacto-info-item">
-                <span className="contacto-info-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                </span>
-                <a href="tel:03883345437" className="contacto-info-link">03883345437</a>
-              </div>
+              {phoneDisplay && (
+                <div className="contacto-info-item">
+                  <span className="contacto-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                  </span>
+                  {phoneHref ? (
+                    whatsappNumber ? (
+                      <TrackedWhatsAppLink href={phoneHref} source="contact-page" className="contacto-info-link">{phoneDisplay}</TrackedWhatsAppLink>
+                    ) : (
+                      <a href={phoneHref} className="contacto-info-link">{phoneDisplay}</a>
+                    )
+                  ) : (
+                    <span className="contacto-info-text">{phoneDisplay}</span>
+                  )}
+                </div>
+              )}
 
-              <div className="contacto-info-item">
-                <span className="contacto-info-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                </span>
-                <a href="mailto:joelpelaezz@gmail.com" className="contacto-info-link">joelpelaezz@gmail.com</a>
-              </div>
+              {storeEmail && (
+                <div className="contacto-info-item">
+                  <span className="contacto-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                  <a href={`mailto:${storeEmail}`} className="contacto-info-link">{storeEmail}</a>
+                </div>
+              )}
 
-              <div className="contacto-info-item">
-                <span className="contacto-info-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </span>
-                <span className="contacto-info-text">mina los adobes n 1194</span>
-              </div>
+              {storeAddress && (
+                <div className="contacto-info-item">
+                  <span className="contacto-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </span>
+                  <span className="contacto-info-text">{storeAddress}</span>
+                </div>
+              )}
             </div>
 
             {/* Mapa */}
@@ -88,66 +121,7 @@ export default function ContactPage() {
 
           {/* Columna derecha - Formulario */}
           <div className="contacto-form-container">
-            <form className="contacto-form">
-              <div className="contacto-form-group">
-                <label htmlFor="contact-name" className="contacto-form-label">Nombre:</label>
-                <input
-                  type="text"
-                  id="contact-name"
-                  name="name"
-                  required
-                  className="contacto-form-input"
-                />
-              </div>
-
-              <div className="contacto-form-group">
-                <label htmlFor="contact-email" className="contacto-form-label">Email:</label>
-                <input
-                  type="email"
-                  id="contact-email"
-                  name="email"
-                  required
-                  className="contacto-form-input"
-                />
-              </div>
-
-              <div className="contacto-form-group">
-                <label htmlFor="contact-phone" className="contacto-form-label">Teléfono (Opcional):</label>
-                <input
-                  type="tel"
-                  id="contact-phone"
-                  name="phone"
-                  className="contacto-form-input"
-                />
-              </div>
-
-              <div className="contacto-form-group">
-                <label htmlFor="contact-message" className="contacto-form-label">Mensaje (Opcional):</label>
-                <textarea
-                  id="contact-message"
-                  name="message"
-                  rows={6}
-                  className="contacto-form-textarea"
-                />
-              </div>
-
-              {/* reCAPTCHA simulado */}
-              <div className="contacto-recaptcha">
-                <div className="contacto-recaptcha-box">
-                  <input type="checkbox" id="recaptcha" className="mr-2" />
-                  <label htmlFor="recaptcha">No soy un robot</label>
-                  <img
-                    src="https://www.gstatic.com/recaptcha/api2/logo_48.png"
-                    alt="reCAPTCHA"
-                    className="ml-auto h-8"
-                  />
-                </div>
-              </div>
-
-              <button type="submit" className="contacto-form-btn">
-                ENVIAR
-              </button>
-            </form>
+            <ContactForm />
           </div>
         </div>
 

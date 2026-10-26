@@ -1,5 +1,7 @@
+import { getSettings } from '@/app/admin/configuracion/actions';
+
 /**
- * Shared social media icons — eliminates ~200 lines of SVG duplication.
+ * Shared social media icons — uses the store's centrally configured profiles.
  * Used in Home, Productos, Detalle, Contacto SEGUINOS sections.
  */
 
@@ -8,11 +10,25 @@ interface SocialIconsProps {
   className?: string;
 }
 
-export default function SocialIcons({ className = '' }: SocialIconsProps) {
+function safeSocialUrl(value: string, fallback: string): string {
+  const candidate = value.trim() || fallback;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export default async function SocialIcons({ className = '' }: SocialIconsProps) {
+  const settings = await getSettings();
+  const instagramUrl = safeSocialUrl(settings.instagramUrl, 'https://www.instagram.com/tendenciashop22');
+  const facebookUrl = safeSocialUrl(settings.facebookUrl, 'https://www.facebook.com/tendenciashop22');
+
   return (
     <div className={`social-icons ${className}`}>
       <a
-        href="https://www.instagram.com/tendenciashop22"
+        href={instagramUrl}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Instagram"
@@ -23,7 +39,7 @@ export default function SocialIcons({ className = '' }: SocialIconsProps) {
         </svg>
       </a>
       <a
-        href="https://www.facebook.com/tendenciashop22"
+        href={facebookUrl}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Facebook"

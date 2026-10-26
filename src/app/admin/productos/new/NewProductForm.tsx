@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createProduct, updateProductVariantImages, uploadProductImage } from '../actions';
 import { validateImageUrl } from '@/lib/image-validation';
 import ImageUploadAdvisor from '@/components/admin/ImageUploadAdvisor';
 import { uploadFile } from '@/lib/storage';
+import { getDiscountPercent } from '@/lib/products/pricing';
 
 // ─── Types ────────────────────────────────────────────────
 interface VariantTypeOption {
@@ -46,6 +47,8 @@ interface Category {
   id: number;
   name: string;
   slug: string;
+  parentId: number | null;
+  position: number;
 }
 
 // ─── Props ────────────────────────────────────────────────
@@ -71,6 +74,34 @@ function formatPrice(cents: number): string {
   return (cents / 100).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 }
 
+type CategoryTreeItem = Category & { depth: number };
+
+// C4-TRACE: Present categories as a hierarchy while keeping the original IDs for selection.
+function flattenCategoryTree(categories: Category[]): CategoryTreeItem[] {
+  const childrenByParent = new Map<number | null, Category[]>();
+  for (const category of categories) {
+    const siblings = childrenByParent.get(category.parentId) || [];
+    siblings.push(category);
+    childrenByParent.set(category.parentId, siblings);
+  }
+
+  const sortCategories = (items: Category[]) => [...items].sort((a, b) => (
+    a.position - b.position || a.name.localeCompare(b.name, 'es')
+  ));
+  const flattened: CategoryTreeItem[] = [];
+  const visit = (parentId: number | null, depth: number, ancestors: Set<number>) => {
+    for (const category of sortCategories(childrenByParent.get(parentId) || [])) {
+      if (ancestors.has(category.id)) continue;
+      flattened.push({ ...category, depth });
+      const nextAncestors = new Set(ancestors).add(category.id);
+      visit(category.id, depth + 1, nextAncestors);
+    }
+  };
+
+  visit(null, 0, new Set());
+  return flattened;
+}
+
 // ─── Component ─────────────────────────────────────────────
 export default function NewProductForm({ categories }: NewProductFormProps) {
   const router = useRouter();
@@ -78,6 +109,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
   const [error, setError] = useState('');
   const [imageUrlError, setImageUrlError] = useState('');
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const categoryTree = flattenCategoryTree(categories);
 
   // Base product form
   const [form, setForm] = useState({
@@ -86,7 +118,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
     price: '',
     priceOffer: '',
     priceTransfer: '',
-    discount: '',
+    stock: '0',
     badge: '',
     hasFreeShipping: false,
     imageUrl: '',
@@ -111,12 +143,70 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
   const [variantTypes, setVariantTypes] = useState<VariantType[]>([]);
   const [selectedVariantTypes, setSelectedVariantTypes] = useState<SelectedVariantType[]>([]);
   const [showAddProperty, setShowAddProperty] = useState(false);
-  const [newPropertyName, setNewPropertyName] = useState('');
-  const [newPropertyOptions, setNewPropertyOptions] = useState('');
-  const [newPropertyPresentation, setNewPropertyPresentation] = useState<'text' | 'color' | 'image'>('text');
-  const [newPropertyColorHex, setNewPropertyColorHex] = useState('#1e3a5f');
   const [combinations, setCombinations] = useState<VariantCombination[]>([]);
-  const [creatingProperty, setCreatingProperty] = useState(false);
+  const [bulkVariantPrice, setBulkVariantPrice] = useState('');
+  const [bulkVariantPriceScope, setBulkVariantPriceScope] = useState<'all' | 'empty'>('all');
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const [leaveBack, setLeaveBack] = useState(false);
+  const allowNavigationRef = useRef(false);
+
+  const isDirty = Object.entries(form).some(([key, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (key === 'isVisible') return value !== true;
+    if (key === 'productType') return value !== 'physical';
+    if (key === 'stock') return value !== '0';
+    return Boolean(value);
+  }) || imageFiles.length > 0 || selectedVariantTypes.length > 0 || combinations.length > 0;
+
+  const requestNavigation = (target: string) => {
+    if (!isDirty) {
+      router.push(target);
+      return;
+    }
+    setLeaveTarget(target);
+    setLeaveBack(false);
+    setShowLeaveDialog(true);
+  };
+
+  const confirmLeave = () => {
+    allowNavigationRef.current = true;
+    setShowLeaveDialog(false);
+    if (leaveBack) {
+      window.history.back();
+      return;
+    }
+    if (leaveTarget) router.push(leaveTarget);
+  };
+
+  const cancelLeave = () => {
+    setShowLeaveDialog(false);
+    setLeaveTarget(null);
+    if (leaveBack) window.history.pushState({ newProductGuard: true }, '', window.location.href);
+    setLeaveBack(false);
+  };
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const handlePopState = () => {
+      if (allowNavigationRef.current) return;
+      setLeaveTarget(null);
+      setLeaveBack(true);
+      setShowLeaveDialog(true);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.history.pushState({ newProductGuard: true }, '', window.location.href);
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isDirty]);
 
   // Load variant types from DB
   useEffect(() => {
@@ -126,58 +216,11 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
       .catch(() => {});
   }, []);
 
-  const reloadVariantTypes = () => {
-    fetch('/api/variant-types')
-      .then((r) => r.json())
-      .then((data) => setVariantTypes(data))
-      .catch(() => {});
-  };
-
-  const handleCreateVariantType = async () => {
-    const name = newPropertyName.trim();
-    const values = newPropertyOptions.split(',').map((v) => v.trim()).filter(Boolean).map((value) => ({
-      value,
-      colorHex: newPropertyPresentation === 'color' ? newPropertyColorHex : undefined,
-    }));
-    if (!name) return;
-
-    setCreatingProperty(true);
-    try {
-      const res = await fetch('/api/variant-types', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, optionValues: values, presentation: newPropertyPresentation }),
-      });
-      if (!res.ok) throw new Error('Error');
-      const newVt = await res.json();
-
-      // Add to list and immediately select it
-      setVariantTypes((prev) => [...prev, newVt]);
-      setSelectedVariantTypes((prev) => [
-        ...prev,
-        { variantTypeId: newVt.id, variantTypeName: newVt.name, optionIds: [] },
-      ]);
-       setNewPropertyName('');
-       setNewPropertyOptions('');
-       setNewPropertyPresentation('text');
-       setNewPropertyColorHex('#1e3a5f');
-      setShowAddProperty(false);
-    } catch {
-      alert('Error al crear la propiedad');
-    } finally {
-      setCreatingProperty(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const hasVariants = combinations.length > 0;
     if (!form.name || (!form.price && !hasVariants)) return;
-    if (hasVariants && !form.price && combinations.some((combination) => !combination.priceOverride || Number.isNaN(Number(combination.priceOverride)))) {
-      setError('Ingresá un precio general o un precio regular para cada variante.');
-      return;
-    }
-    if (combinations.some((combination) => combination.priceOffer && Number(combination.priceOffer) >= Number(combination.priceOverride))) {
+    if (combinations.some((combination) => combination.priceOffer && Number(combination.priceOffer) >= Number(combination.priceOverride || 0))) {
       setError('La oferta de cada variante debe ser menor que su precio regular.');
       return;
     }
@@ -194,17 +237,15 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
     setLoading(true);
     try {
       // Build variantCombinations from generated combos
-      const variantCombinations = combinations
-        .filter((c) => c.stock > 0 || form.price)
-        .map((c) => ({
-          optionIds: c.optionIds,
-          stock: c.stock,
-           price: c.priceOverride
-             ? Math.round(parseFloat(c.priceOverride) * 100)
-             : undefined,
-           priceOffer: c.priceOffer ? Math.round(parseFloat(c.priceOffer) * 100) : undefined,
-          imageUrl: c.imageIndex.startsWith('url:') ? c.imageIndex.slice(4) : undefined,
-        }));
+      const variantCombinations = combinations.map((c) => ({
+        optionIds: c.optionIds,
+        stock: c.stock,
+        price: c.priceOverride
+          ? Math.round(parseFloat(c.priceOverride) * 100)
+          : 0,
+        priceOffer: c.priceOffer ? Math.round(parseFloat(c.priceOffer) * 100) : undefined,
+        imageUrl: c.imageIndex.startsWith('url:') ? c.imageIndex.slice(4) : undefined,
+      }));
 
       const imageUrls = form.imageUrl.trim() ? [form.imageUrl.trim()] : [];
 
@@ -213,12 +254,9 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
         description: form.description || undefined,
         price: form.price
           ? Math.round(parseFloat(form.price) * 100)
-          : hasVariants
-          ? Math.round(parseFloat(combinations[0].priceOverride) * 100)
-          : Math.round(parseFloat(form.price) * 100),
+          : null,
         priceOffer: form.priceOffer ? Math.round(parseFloat(form.priceOffer) * 100) : undefined,
         priceTransfer: form.priceTransfer ? Math.round(parseFloat(form.priceTransfer) * 100) : undefined,
-        discount: form.discount || undefined,
         badge: form.badge || undefined,
         hasFreeShipping: form.hasFreeShipping,
         categoryIds: form.categoryIds,
@@ -231,6 +269,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
         sku: form.sku || undefined,
         barcode: form.barcode || undefined,
         productType: form.productType,
+        stock: form.stock ? parseInt(form.stock, 10) : 0,
         seoTitle: form.seoTitle || undefined,
         seoDescription: form.seoDescription || undefined,
         variantCombinations: variantCombinations.length > 0 ? variantCombinations : undefined,
@@ -310,7 +349,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
         optionIds: comboOptionIds,
         optionNames,
         stock: 0,
-        priceOverride: '',
+        priceOverride: '0',
         priceOffer: '',
         imageIndex: '',
       };
@@ -326,6 +365,26 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
     });
   };
 
+  const applyBulkVariantPrice = () => {
+    const parsedPrice = Number(bulkVariantPrice);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setError('Ingresá un precio válido mayor o igual a 0.');
+      return;
+    }
+
+    const overwritesExisting = combinations.some((combination) => Number(combination.priceOverride || 0) > 0);
+    if (bulkVariantPriceScope === 'all' && overwritesExisting && !window.confirm('Esto va a sobrescribir los precios cargados. ¿Continuar?')) {
+      return;
+    }
+
+    setCombinations((prev) => prev.map((combination) => (
+      bulkVariantPriceScope === 'all' || Number(combination.priceOverride || 0) === 0
+        ? { ...combination, priceOverride: bulkVariantPrice }
+        : combination
+    )));
+    setError('');
+  };
+
   const canGenerate =
     selectedVariantTypes.length > 0 &&
     selectedVariantTypes.every((s) => s.optionIds.length > 0);
@@ -339,12 +398,12 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
       )}
 
       <div className="admin-edit-back">
-        <Link href="/admin/productos" className="admin-edit-back-link">
+        <button type="button" className="admin-edit-back-link" onClick={() => requestNavigation('/admin/productos')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
           </svg>
           Volver
-        </Link>
+        </button>
       </div>
 
       <div className="admin-edit-header">
@@ -412,13 +471,13 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                 {selectedVariantTypes.length < 3 && (
                   <button type="button" onClick={() => setShowAddProperty(true)}
                     className="admin-btn admin-btn-secondary admin-btn-sm">
-                    + Agregar propiedad
+                    + Seleccionar propiedad
                   </button>
                 )}
               </div>
 
               <p className="admin-field-hint">
-                Agregá propiedades como Color, Talle, Estampa, etc. Cada propiedad puede tener múltiples valores.
+                 Seleccioná propiedades configuradas como Color, Talle o Estampa. Cada propiedad puede tener múltiples valores.
                 Máximo 3 propiedades por producto.
               </p>
 
@@ -451,13 +510,13 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                 );
               })}
 
-              {/* Add property modal */}
-              {showAddProperty && (
-                <div className="admin-variant-add-modal">
-                  <div className="admin-variant-modal-inner">
-                    <div className="admin-form-group">
-                      <label className="admin-form-label">Elegí una propiedad o creá una nueva</label>
-                      <div className="admin-variant-preset-list">
+               {/* Configured property selector */}
+               {showAddProperty && (
+                 <div className="admin-variant-add-modal">
+                   <div className="admin-variant-modal-inner">
+                     <div className="admin-form-group">
+                       <label className="admin-form-label">Elegí una propiedad configurada</label>
+                       <div className="admin-variant-preset-list">
                         {variantTypes
                           .filter((vt) => !selectedVariantTypes.find((s) => s.variantTypeId === vt.id))
                           .map((vt) => (
@@ -466,48 +525,20 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                               onClick={() => addVariantType(vt)}>
                               {vt.name}
                             </button>
-                          ))}
-                      </div>
-                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <input type="text" className="admin-input" style={{ flex: 1 }}
-                          value={newPropertyName}
-                          onChange={(e) => setNewPropertyName(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && newPropertyName.trim()) handleCreateVariantType(); }}
-                          placeholder="Nombre de la propiedad (ej: Material)" />
-                        <select className="admin-input" value={newPropertyPresentation} onChange={(e) => setNewPropertyPresentation(e.target.value as 'text' | 'color' | 'image')} aria-label="Presentación de la propiedad">
-                          <option value="text">Texto</option>
-                          <option value="color">Color</option>
-                          <option value="image">Imagen</option>
-                        </select>
-                        <button type="button"
-                          className="admin-btn admin-btn-primary admin-btn-sm"
-                          disabled={!newPropertyName.trim() || creatingProperty}
-                          onClick={handleCreateVariantType}>
-                          {creatingProperty ? 'Creando...' : 'Agregar'}
-                        </button>
-                        <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm"
-                          onClick={() => { setNewPropertyName(''); setNewPropertyOptions(''); setShowAddProperty(false); }}>
-                          Cancelar
-                        </button>
-                      </div>
-                        {newPropertyName && (
-                        <div className="admin-form-group" style={{ marginTop: '8px' }}>
-                          <label className="admin-form-label">Valores (separados por coma)</label>
-                          <input type="text" className="admin-input"
-                            value={newPropertyOptions}
-                            onChange={(e) => setNewPropertyOptions(e.target.value)}
-                            placeholder="Algodón, Poliéster, Lana" />
-                          {newPropertyPresentation === 'color' && (
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-                              <input type="color" value={newPropertyColorHex} onChange={(e) => setNewPropertyColorHex(e.target.value)} aria-label="Selector de color" />
-                              <input type="text" className="admin-input" value={newPropertyColorHex} onChange={(e) => setNewPropertyColorHex(e.target.value)} pattern="^#[0-9A-Fa-f]{6}$" placeholder="#1e3a5f" aria-label="Color hexadecimal" />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                           ))}
+                       </div>
+                       {variantTypes.filter((vt) => !selectedVariantTypes.find((s) => s.variantTypeId === vt.id)).length === 0 && (
+                         <p className="admin-field-hint">
+                           No hay propiedades disponibles.{' '}
+                           <Link href="/admin/variaciones" target="_blank">Administrar propiedades</Link>
+                         </p>
+                       )}
+                       <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setShowAddProperty(false)}>
+                         Cerrar
+                       </button>
+                     </div>
+                   </div>
+                 </div>
               )}
 
               {/* Generate button */}
@@ -532,15 +563,42 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                 </div>
               )}
 
-              {/* Combinations table */}
-              {combinations.length > 0 && (
-                <div className="admin-combinations-table" style={{ marginTop: '16px' }}>
-                  <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+               {/* Combinations table */}
+               {combinations.length > 0 && (
+                 <div className="admin-combinations-table" style={{ marginTop: '16px' }}>
+                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', padding: '12px', marginBottom: '16px', background: 'var(--nimbus-bg-alt, #f8f9fa)', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                     <label htmlFor="bulk-new-variant-price" style={{ fontSize: '13px', fontWeight: 600, color: '#444' }}>Aplicar precio</label>
+                     <input
+                       id="bulk-new-variant-price"
+                       type="number"
+                       min="0"
+                       step="0.01"
+                       className="admin-input"
+                       style={{ width: '120px' }}
+                       value={bulkVariantPrice}
+                       onChange={(e) => setBulkVariantPrice(e.target.value)}
+                       placeholder="Ej: 12000"
+                     />
+                     <select
+                       className="admin-input"
+                       style={{ width: '220px' }}
+                       value={bulkVariantPriceScope}
+                       onChange={(e) => setBulkVariantPriceScope(e.target.value as 'all' | 'empty')}
+                       aria-label="Alcance del precio masivo"
+                     >
+                       <option value="all">Todas las variantes</option>
+                       <option value="empty">Solo variantes sin precio</option>
+                     </select>
+                     <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={applyBulkVariantPrice}>
+                       Aplicar
+                     </button>
+                   </div>
+                   <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--nimbus-bg-alt, #f8f9fa)' }}>
                         <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '12px', fontWeight: 600 }}>Variante</th>
                         <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, width: '100px' }}>Stock</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, width: '120px' }}>Precio regular</th>
+                         <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, width: '120px' }}>Precio regular</th>
                         <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, width: '120px' }}>Oferta</th>
                         <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '12px', fontWeight: 600, width: '160px' }}>Imagen</th>
                       </tr>
@@ -558,8 +616,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                             <input type="number" min="0" step="0.01" className="admin-input" style={{ width: '100px', textAlign: 'right' }}
                               value={combo.priceOverride}
                               onChange={(e) => updateCombination(i, 'priceOverride', e.target.value)}
-                              placeholder="Precio de la variante"
-                              required />
+                               placeholder="0 = no disponible" />
                           </td>
                           <td style={{ padding: '8px 12px' }}>
                             <input type="number" min="0" step="0.01" className="admin-input" style={{ width: '100px', textAlign: 'right' }}
@@ -696,7 +753,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
               <div className="admin-form-group">
                 <label className="admin-form-label">Categoría</label>
                     <div style={{ display: 'grid', gap: '8px' }}>
-                      {categories.map((cat) => (
+                      {categoryTree.map((cat) => (
                         <label key={cat.id} className="admin-checkbox-label">
                           <input
                             type="checkbox"
@@ -708,7 +765,13 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                                 : [...previous.categoryIds, cat.id],
                             }))}
                           />
-                          <span>{cat.name}</span>
+                          <span style={{
+                            paddingLeft: `${cat.depth * 18}px`,
+                            fontWeight: cat.depth === 0 ? 700 : 400,
+                          }}>
+                            {cat.depth > 0 && <span aria-hidden="true" style={{ marginRight: '6px', opacity: 0.55 }}>↳</span>}
+                            {cat.name}
+                          </span>
                         </label>
                       ))}
                     </div>
@@ -717,17 +780,40 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
 
             {/* Price */}
             <div className="admin-card">
-              <h3 className="admin-card-title admin-card-title--sm">Precio</h3>
-              <div className="admin-form-group">
-                   <label className="admin-form-label">Precio general {combinations.length === 0 ? '*' : '(opcional con variantes)'}</label>
+               <h3 className="admin-card-title admin-card-title--sm">Precios y disponibilidad</h3>
+               {combinations.length > 0 && (
+                 <div className="admin-form-hint" style={{ marginBottom: '16px' }}>
+                   Cada variante tiene su propio precio. Las variantes con precio 0 quedan sin venta hasta que les asignes un precio.
+                 </div>
+               )}
+               <div className="admin-form-group">
+                    <label className="admin-form-label">Precio general {combinations.length === 0 ? '*' : '(no aplica con variantes)'}</label>
                 <div className="admin-edit-price-row">
                   <span className="admin-edit-price-prefix">$</span>
-                  <input type="number" className="admin-input" value={form.price}
-                    onChange={(e) => setForm({ ...form, price: e.target.value })}
-                     placeholder={combinations.length === 0 ? '0' : 'Se define por variante'} step="0.01" min="0" required={combinations.length === 0} />
+                   <input type="number" className="admin-input" value={form.price}
+                     onChange={(e) => setForm({ ...form, price: e.target.value })}
+                      placeholder={combinations.length === 0 ? '0' : 'Se define por variante'} step="0.01" min="0" required={combinations.length === 0} disabled={combinations.length > 0} />
+                 </div>
                 </div>
-              </div>
-              <div className="admin-form-group">
+                {combinations.length === 0 && form.productType === 'physical' && (
+                  <div className="admin-form-group">
+                    <label className="admin-form-label" htmlFor="initial-product-stock">Stock inicial</label>
+                    <input
+                      id="initial-product-stock"
+                      type="number"
+                      className="admin-input"
+                      min="0"
+                      step="1"
+                      value={form.stock}
+                      onChange={(event) => setForm((current) => ({ ...current, stock: event.target.value }))}
+                      aria-describedby="initial-product-stock-hint"
+                    />
+                    <span id="initial-product-stock-hint" className="admin-form-hint">
+                      Si queda en 0, el producto no se podrá comprar hasta cargar stock en Inventario.
+                    </span>
+                  </div>
+                )}
+                {combinations.length === 0 && <div className="admin-form-group">
                 <label className="admin-form-label">Precio de oferta</label>
                 <div className="admin-edit-price-row">
                   <span className="admin-edit-price-prefix">$</span>
@@ -735,32 +821,43 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
                     onChange={(e) => setForm({ ...form, priceOffer: e.target.value })}
                     placeholder="0" step="0.01" min="0" />
                 </div>
-              </div>
-              <div className="admin-form-group" style={{ marginBottom: 0 }}>
+               </div>}
+               {combinations.length === 0 && <div className="admin-form-group">
+                <label className="admin-form-label">Descuento (%)</label>
+                <div className="admin-edit-price-row">
+                  <span className="admin-edit-price-prefix">%</span>
+                  <input
+                    type="text"
+                    className="admin-input"
+                    value={getDiscountPercent(
+                      form.price ? Math.round(parseFloat(form.price) * 100) : null,
+                      form.priceOffer ? Math.round(parseFloat(form.priceOffer) * 100) : null,
+                    ) ?? ''}
+                    readOnly
+                    aria-readonly="true"
+                    placeholder="Se calcula automáticamente"
+                  />
+                </div>
+               </div>}
+               {combinations.length === 0 && <div className="admin-form-group" style={{ marginBottom: 0 }}>
                 <label className="admin-form-label">Precio transferencia</label>
                 <div className="admin-edit-price-row">
                   <span className="admin-edit-price-prefix">$</span>
-                  <input type="number" className="admin-input" value={form.priceTransfer}
-                    onChange={(e) => setForm({ ...form, priceTransfer: e.target.value })}
-                    placeholder="0" step="0.01" min="0" />
-                </div>
-              </div>
-            </div>
+                   <input type="number" className="admin-input" value={form.priceTransfer}
+                     onChange={(e) => setForm({ ...form, priceTransfer: e.target.value })}
+                     placeholder="0" step="0.01" min="0" />
+                 </div>
+               </div>}
+               </div>
 
-            {/* Other */}
+             {/* Other */}
             <div className="admin-card">
               <h3 className="admin-card-title admin-card-title--sm">Otros</h3>
-              <div className="admin-form-group">
+              <div className="admin-form-group" style={{ marginBottom: 0 }}>
                 <label className="admin-form-label">Badge</label>
                 <input type="text" className="admin-input" value={form.badge}
                   onChange={(e) => setForm({ ...form, badge: e.target.value })}
                   placeholder="Ej: Nuevo, Oferta, -20%" />
-              </div>
-              <div className="admin-form-group" style={{ marginBottom: 0 }}>
-                <label className="admin-form-label">Descuento (%)</label>
-                <input type="text" className="admin-input" value={form.discount}
-                  onChange={(e) => setForm({ ...form, discount: e.target.value })}
-                  placeholder="Ej: 20" />
               </div>
             </div>
 
@@ -786,7 +883,7 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
 
             {/* Save/Cancel */}
             <div className="admin-edit-footer">
-              <Link href="/admin/productos" className="admin-btn admin-btn-secondary admin-edit-footer-btn">Cancelar</Link>
+              <button type="button" className="admin-btn admin-btn-secondary admin-edit-footer-btn" onClick={() => requestNavigation('/admin/productos')}>Cancelar</button>
               <button className="admin-btn admin-btn-primary admin-edit-footer-btn" type="submit" disabled={loading}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="20 6 9 17 4 12" />
@@ -797,6 +894,19 @@ export default function NewProductForm({ categories }: NewProductFormProps) {
           </div>
         </div>
       </form>
+
+      {showLeaveDialog && (
+        <div className="admin-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="new-product-leave-title">
+          <div className="admin-confirm-dialog">
+            <h2 id="new-product-leave-title" className="admin-confirm-title">¿Cancelar la creación?</h2>
+            <p className="admin-confirm-message">Tenés cambios sin guardar. Si salís ahora, se perderá la información ingresada.</p>
+            <div className="admin-confirm-actions">
+              <button type="button" className="admin-btn admin-btn-secondary" onClick={cancelLeave}>Seguir editando</button>
+              <button type="button" className="admin-btn admin-btn-danger" onClick={confirmLeave}>Salir sin guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

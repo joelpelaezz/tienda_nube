@@ -5,10 +5,13 @@ import type { NextRequest } from 'next/server';
 // and check for auth without importing the full auth config
 
 export function middleware(req: NextRequest) {
-  const isAdminRoute = req.nextUrl.pathname.startsWith('/admin');
-  const isApiRoute = req.nextUrl.pathname.startsWith('/api/admin');
+  const pathname = req.nextUrl.pathname;
+  const isAdminRoute = pathname.startsWith('/admin');
+  const isSensitiveApi = pathname.startsWith('/api/inventory')
+    || pathname.startsWith('/api/upload')
+    || pathname.startsWith('/api/admin');
 
-  if (!isAdminRoute && !isApiRoute) {
+  if (!isAdminRoute && !isSensitiveApi) {
     return NextResponse.next();
   }
 
@@ -18,7 +21,7 @@ export function middleware(req: NextRequest) {
 
   if (!authToken) {
     const loginUrl = new URL('/ingresar', req.nextUrl.origin);
-    loginUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
+    loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -26,5 +29,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/api/inventory/:path*', '/api/upload/:path*'],
 };

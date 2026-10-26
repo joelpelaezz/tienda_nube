@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import sharp from 'sharp';
+import { getSettings } from '@/app/admin/configuracion/actions';
+import { assertAdminRequest } from '@/lib/auth';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(req: NextRequest) {
   try {
+    // C4-TRACE: image uploads are restricted to authenticated admins.
+    const authorization = await assertAdminRequest();
+    if (!authorization.ok) return authorization.response;
+
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const productId = formData.get('productId') as string | null;
@@ -30,10 +37,19 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const originalBuffer = Buffer.from(bytes);
+    const storeSettings = await getSettings();
+    const shouldConvert = storeSettings.imageConversionToWebp && file.type !== 'image/gif';
+    const buffer = shouldConvert
+      ? await sharp(originalBuffer)
+          .rotate()
+          .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 84, effort: 4 })
+          .toBuffer()
+      : originalBuffer;
 
     const timestamp = Date.now();
-    const ext = file.name.split('.').pop() || 'jpg';
+    const ext = shouldConvert ? 'webp' : (file.name.split('.').pop()?.toLowerCase() || 'jpg');
     const filename = `${productId || 'temp'}-${timestamp}.${ext}`;
 
     const uploadDir = path.join(process.cwd(), 'public', 'product-images');

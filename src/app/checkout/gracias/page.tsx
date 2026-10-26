@@ -5,17 +5,40 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import CartDrawer from '@/components/CartDrawer';
 import { formatPrice } from '@/lib/utils/format';
+import { db } from '@/lib/db';
+import { orders } from '@/drizzle/schema';
+import { eq } from 'drizzle-orm';
+import { getSettings } from '@/app/admin/configuracion/actions';
 
 export default async function CheckoutGraciasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ order?: string; total?: string; status?: string }>;
+  searchParams: Promise<{ order?: string; status?: string; payment_id?: string }>;
 }) {
   const params = await searchParams;
-  const orderNumber = params.order || '';
-  const total = params.total ? parseInt(params.total) : 0;
   const paymentStatus = params.status;
   const isApproved = paymentStatus === 'approved';
+  // C4-TRACE: follow-up message is configurable from the checkout options section.
+  const storeSettings = await getSettings();
+  const trackingMessage = storeSettings.checkoutTrackingMessage;
+
+  // Look up the real order total from DB using external_reference (orderId)
+  let orderNumber = '';
+  let total = 0;
+  if (params.order) {
+    const orderId = parseInt(params.order);
+    if (!isNaN(orderId)) {
+      const [order] = await db
+        .select({ orderNumber: orders.orderNumber, total: orders.total })
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+      if (order) {
+        orderNumber = order.orderNumber;
+        total = order.total;
+      }
+    }
+  }
 
   return (
     <>
@@ -52,9 +75,7 @@ export default async function CheckoutGraciasPage({
                 </div>
               )}
               <p className="checkout-gracias-text">
-                Te enviamos la confirmación a tu email.
-                <br />
-                Preparamos tu pedido y te notificaremos cuando esté listo para enviar.
+                {trackingMessage || 'Te enviamos la confirmación a tu email.'}
               </p>
             </div>
           </>

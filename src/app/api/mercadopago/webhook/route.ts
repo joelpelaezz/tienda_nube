@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { orders } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { orders, orderItems, products, productStockMovements, productVariants, stockMovements } from '@/drizzle/schema';
+import { eq, and, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
@@ -59,6 +59,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Missing external reference' }, { status: 400 });
       }
 
+      const orderId = parseInt(externalReference);
+      if (isNaN(orderId)) {
+        return NextResponse.json({ error: 'Invalid order ID' }, { status: 400 });
+      }
+
+      // Get current order status before updating
+      const [currentOrder] = await db
+        .select({ status: orders.status })
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+
+      if (!currentOrder) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
       // Map MP status to our order status
       let orderStatus: string;
       switch (status) {
@@ -78,14 +94,101 @@ export async function POST(req: NextRequest) {
           orderStatus = 'pending';
       }
 
-      // Update order status
-      await db
-        .update(orders)
-        .set({
-          status: orderStatus,
-          mpPaymentId: String(paymentId),
-        } as any)
-        .where(eq(orders.id, parseInt(externalReference)));
+      await db.transaction(async (tx) => {
+        // Claim the pending transition atomically so duplicate provider webhooks
+        // cannot decrement stock more than once.
+        const [claimedOrder] = await tx.update(orders)
+          .set({ status: orderStatus, mpPaymentId: String(paymentId) })
+          .where(and(eq(orders.id, orderId), eq(orders.status, 'pending')))
+          .returning({ id: orders.id });
+
+        if (!claimedOrder) {
+          await tx.update(orders)
+            .set({ status: orderStatus, mpPaymentId: String(paymentId) })
+            .where(eq(orders.id, orderId));
+          return;
+        }
+
+        const items = await tx
+          .select({
+            variantId: orderItems.variantId,
+            productId: orderItems.productId,
+            quantity: orderItems.quantity,
+            stockReserved: orderItems.stockReserved,
+            productType: products.productType,
+          })
+          .from(orderItems)
+          .innerJoin(products, eq(orderItems.productId, products.id))
+          .where(eq(orderItems.orderId, orderId));
+
+        if (orderStatus === 'confirmed' || orderStatus === 'cancelled') {
+          for (const item of items) {
+            if (!item.stockReserved || item.productType === 'digital' || !item.quantity) continue;
+            if (item.variantId) {
+              if (orderStatus === 'confirmed') {
+                const [updatedVariant] = await tx.update(productVariants)
+                  .set({
+                    stock: sql`${productVariants.stock} - ${item.quantity}`,
+                    reservedStock: sql`${productVariants.reservedStock} - ${item.quantity}`,
+                  })
+                  .where(and(
+                    eq(productVariants.id, item.variantId),
+                    sql`${productVariants.stock} >= ${item.quantity}`,
+                    sql`${productVariants.reservedStock} >= ${item.quantity}`,
+                  ))
+                  .returning({ stock: productVariants.stock });
+                if (!updatedVariant) throw new Error(`No se pudo completar la reserva de la variante ${item.variantId}.`);
+                await tx.insert(stockMovements).values({
+                  variantId: item.variantId,
+                  movementType: 'venta',
+                  quantity: -item.quantity,
+                  stockAfter: updatedVariant.stock ?? 0,
+                });
+              } else {
+                const [released] = await tx.update(productVariants)
+                  .set({ reservedStock: sql`${productVariants.reservedStock} - ${item.quantity}` })
+                  .where(and(
+                    eq(productVariants.id, item.variantId),
+                    sql`${productVariants.reservedStock} >= ${item.quantity}`,
+                  ))
+                  .returning({ id: productVariants.id });
+                if (!released) throw new Error(`No se pudo liberar la reserva de la variante ${item.variantId}.`);
+              }
+            } else if (orderStatus === 'confirmed') {
+              if (item.productId == null) throw new Error('El pedido contiene una línea sin producto asociado.');
+              const [updatedProduct] = await tx.update(products)
+                .set({
+                  stock: sql`${products.stock} - ${item.quantity}`,
+                  reservedStock: sql`${products.reservedStock} - ${item.quantity}`,
+                })
+                .where(and(
+                  eq(products.id, item.productId),
+                  sql`${products.stock} >= ${item.quantity}`,
+                  sql`${products.reservedStock} >= ${item.quantity}`,
+                ))
+                .returning({ stock: products.stock });
+              if (!updatedProduct) throw new Error(`No se pudo completar la reserva del producto ${item.productId}.`);
+              await tx.insert(productStockMovements).values({
+                productId: item.productId,
+                movementType: 'venta',
+                quantity: -item.quantity,
+                stockAfter: updatedProduct.stock,
+              });
+            } else {
+              if (item.productId == null) throw new Error('El pedido contiene una línea sin producto asociado.');
+              const [released] = await tx.update(products)
+                .set({ reservedStock: sql`${products.reservedStock} - ${item.quantity}` })
+                .where(and(
+                  eq(products.id, item.productId),
+                  sql`${products.reservedStock} >= ${item.quantity}`,
+                ))
+                .returning({ id: products.id });
+              if (!released) throw new Error(`No se pudo liberar la reserva del producto ${item.productId}.`);
+            }
+          }
+          await tx.update(orderItems).set({ stockReserved: false }).where(eq(orderItems.orderId, orderId));
+        }
+      });
 
       return NextResponse.json({ received: true });
     }

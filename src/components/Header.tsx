@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useCartStore } from '@/lib/store';
 import { usePathname } from 'next/navigation';
 import LogoutButton from '@/components/LogoutButton';
+import { formatPrice } from '@/lib/utils/format';
 
 export default function Header() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,6 +18,12 @@ export default function Header() {
     text: 'Descuentos exclusivos para comprar al por mayor - ¡contactanos!',
     link: '',
   });
+  const [headerContact, setHeaderContact] = useState({
+    storePhone: '',
+    whatsappNumber: '',
+    showPhoneInHeader: false,
+  });
+  // C4-TRACE: contact shown in the desktop header is governed by persisted store settings.
   const { items, toggleCart } = useCartStore();
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -26,15 +33,35 @@ export default function Header() {
   useEffect(() => {
     fetch('/api/store-settings')
       .then((response) => response.json())
-      .then((settings: { promoBarEnabled?: boolean; promoBarText?: string; promoBarLink?: string }) => {
+      .then((settings: {
+        promoBarEnabled?: boolean;
+        promoBarText?: string;
+        promoBarLink?: string;
+        storePhone?: string;
+        whatsappNumber?: string;
+        showPhoneInHeader?: boolean;
+      }) => {
         setPromoBar({
           enabled: settings.promoBarEnabled !== false,
           text: settings.promoBarText || 'Descuentos exclusivos para comprar al por mayor - ¡contactanos!',
           link: settings.promoBarLink || '',
         });
+        setHeaderContact({
+          storePhone: settings.storePhone || '',
+          whatsappNumber: settings.whatsappNumber || '',
+          showPhoneInHeader: settings.showPhoneInHeader === true,
+        });
       })
       .catch(() => undefined);
   }, []);
+
+  const headerPhone = headerContact.storePhone || headerContact.whatsappNumber;
+  const normalizedHeaderPhone = headerPhone.replace(/\D/g, '');
+  const headerPhoneHref = headerContact.storePhone
+    ? `tel:${headerContact.storePhone.replace(/[^\d+]/g, '')}`
+    : normalizedHeaderPhone
+      ? `https://wa.me/${normalizedHeaderPhone}`
+      : '';
 
   const promoContent = (mobile = false) => (
     <span className={`header-promo-track ${mobile ? 'header-promo-track--mobile' : ''}`}>
@@ -59,17 +86,15 @@ export default function Header() {
   return (
     <>
       {/* Barra superior - solo desktop */}
-      {promoBar.enabled && <div className="header-top-bar hidden md:block">
-        <div className="header-top-promo">{promoBarContent()}</div>
+      <div className="header-top-bar hidden md:block">
+        {promoBar.enabled && <div className="header-top-promo">{promoBarContent()}</div>}
         <div className="header-top-info container flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <a href="tel:03883345437" className="hover:underline">
-              03883345437
-            </a>
-            <span className="text-gray-300">|</span>
-            <a href="mailto:joelpelaezz@gmail.com" className="hover:underline">
-              joelpelaezz@gmail.com
-            </a>
+            {headerContact.showPhoneInHeader && headerPhone && headerPhoneHref && (
+              <a href={headerPhoneHref} className="hover:underline">
+                {headerPhone}
+              </a>
+            )}
           </div>
           <div className="flex items-center space-x-4">
             {session?.user ? (
@@ -92,7 +117,7 @@ export default function Header() {
             )}
           </div>
         </div>
-      </div>}
+      </div>
 
       {/* Barra promo mobile */}
       {promoBar.enabled && <div className="header-mobile-promo md:hidden">{promoBarContent(true)}</div>}
@@ -140,7 +165,9 @@ export default function Header() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 {itemCount > 0 && <span className="header-cart-count">{itemCount}</span>}
-                <span className="text-sm font-semibold">${items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString('es-AR')}</span>
+                <span className="text-sm font-semibold">
+                  {formatPrice(items.reduce((sum, item) => sum + item.price * item.quantity, 0))}
+                </span>
               </button>
             </div>
           </div>

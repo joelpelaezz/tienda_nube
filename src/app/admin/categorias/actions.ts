@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { categories } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq, isNull } from 'drizzle-orm';
 
 function generateSlug(name: string): string {
   return name
@@ -37,6 +37,7 @@ export async function createCategory(formData: FormData) {
     name: name.trim(),
     slug,
     parentId: parentId ? parseInt(parentId) : null,
+    position: 0,
   });
 
   revalidatePath('/admin/categorias');
@@ -86,6 +87,43 @@ export async function deleteCategory(id: number) {
   }
 
   await db.delete(categories).where(eq(categories.id, id));
+
+  revalidatePath('/admin/categorias');
+}
+
+export async function moveCategory(id: number, parentId: number | null) {
+  if (parentId === id) return { error: 'Una categoría no puede ser padre de sí misma.' };
+
+  const allCategories = await db.select({ id: categories.id, parentId: categories.parentId }).from(categories);
+  const descendants = new Set<number>();
+  const pending = [id];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    for (const category of allCategories) {
+      if (category.parentId === current && !descendants.has(category.id)) {
+        descendants.add(category.id);
+        pending.push(category.id);
+      }
+    }
+  }
+  if (parentId !== null && descendants.has(parentId)) {
+    return { error: 'No podés mover una categoría dentro de sus propios descendientes.' };
+  }
+
+  const siblingRows = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(parentId === null ? isNull(categories.parentId) : eq(categories.parentId, parentId))
+    .orderBy(asc(categories.position), asc(categories.id));
+  const orderedIds = siblingRows.map((row) => row.id).filter((categoryId) => categoryId !== id);
+  orderedIds.push(id);
+
+  await db.transaction(async (tx) => {
+    await tx.update(categories).set({ parentId }).where(eq(categories.id, id));
+    for (let position = 0; position < orderedIds.length; position++) {
+      await tx.update(categories).set({ position }).where(eq(categories.id, orderedIds[position]));
+    }
+  });
 
   revalidatePath('/admin/categorias');
 }

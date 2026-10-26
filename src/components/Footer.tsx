@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 
 type FooterSettings = {
+  storePhone: string;
+  storeEmail: string;
+  storeAddress: string;
+  whatsappNumber: string;
   footerCopyrightText: string;
   footerConsumerEnabled: boolean;
   footerConsumerText: string;
@@ -17,6 +21,10 @@ type FooterSettings = {
 };
 
 const DEFAULT_SETTINGS: FooterSettings = {
+  storePhone: '',
+  storeEmail: '',
+  storeAddress: '',
+  whatsappNumber: '',
   footerCopyrightText: 'Copyright Tendencia Shop - 20323692352 - 2026.',
   footerConsumerEnabled: true,
   footerConsumerText: 'Defensa del consumidor',
@@ -35,6 +43,10 @@ export default function Footer() {
     fetch('/api/store-settings')
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('No se pudo cargar el footer')))
       .then((data) => setSettings({
+        storePhone: typeof data.storePhone === 'string' ? data.storePhone : DEFAULT_SETTINGS.storePhone,
+        storeEmail: typeof data.storeEmail === 'string' ? data.storeEmail : DEFAULT_SETTINGS.storeEmail,
+        storeAddress: typeof data.storeAddress === 'string' ? data.storeAddress : DEFAULT_SETTINGS.storeAddress,
+        whatsappNumber: typeof data.whatsappNumber === 'string' ? data.whatsappNumber : DEFAULT_SETTINGS.whatsappNumber,
         footerCopyrightText: typeof data.footerCopyrightText === 'string' ? data.footerCopyrightText : DEFAULT_SETTINGS.footerCopyrightText,
         footerConsumerEnabled: data.footerConsumerEnabled !== false,
         footerConsumerText: typeof data.footerConsumerText === 'string' ? data.footerConsumerText : DEFAULT_SETTINGS.footerConsumerText,
@@ -47,6 +59,14 @@ export default function Footer() {
       }))
       .catch(() => undefined);
   }, []);
+
+  // C4-TRACE: footer contact details come only from store settings, never personal hardcoded values.
+  const footerPhone = settings.storePhone || settings.whatsappNumber;
+  const footerPhoneHref = settings.storePhone
+    ? `tel:${settings.storePhone.replace(/[^\d+]/g, '')}`
+    : settings.whatsappNumber
+      ? `https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`
+      : '';
 
   return (
     <>
@@ -111,32 +131,34 @@ export default function Footer() {
             </div>
 
             {/* Contacto */}
-            <div>
+            {(footerPhone || settings.storeEmail || settings.storeAddress) && <div>
               <h4 className="footer-title">Contactanos</h4>
               <ul className="footer-list">
-                <li className="flex items-center gap-2">
+                {footerPhone && (
+                  <li className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  03883345437
-                </li>
-                <li className="flex items-center gap-2">
+                    <a href={footerPhoneHref} className="hover:text-primary">{footerPhone}</a>
+                  </li>
+                )}
+                {settings.storeEmail && <li className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <a href="mailto:joelpelaezz@gmail.com" className="hover:text-primary">
-                    joelpelaezz@gmail.com
+                  <a href={`mailto:${settings.storeEmail}`} className="hover:text-primary">
+                    {settings.storeEmail}
                   </a>
-                </li>
-                <li className="flex items-center gap-2">
+                </li>}
+                {settings.storeAddress && <li className="flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  Mina los Adobes n 1194
-                </li>
+                  {settings.storeAddress}
+                </li>}
               </ul>
-            </div>
+            </div>}
           </div>
         </div>
       </footer>

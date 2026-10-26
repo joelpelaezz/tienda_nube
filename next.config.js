@@ -27,6 +27,11 @@ const nextConfig = {
         hostname: 'fastly.picsum.photos',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'static-c4-1.s3.amazonaws.com',
+        pathname: '/assets/**',
+      },
     ],
   },
 };
