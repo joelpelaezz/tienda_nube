@@ -3,8 +3,11 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { productStockMovements } from '@/drizzle/schema';
 import { translateMovementType } from '@/app/admin/inventario/stock-utils';
+import { assertAdminRequest } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
+  const authorization = await assertAdminRequest();
+  if (!authorization.ok) return authorization.response;
   try {
     const productId = Number(new URL(request.url).searchParams.get('productId'));
     if (!Number.isInteger(productId) || productId <= 0) {

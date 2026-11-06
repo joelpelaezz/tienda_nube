@@ -403,7 +403,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
             {productsList.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <p className="text-lg">No se encontraron productos</p>
-                <a href="/productos/" className="btn btn-primary mt-4">Ver todos</a>
+                <Link href="/productos/" className="btn btn-primary mt-4">Ver todos</Link>
               </div>
             ) : (
               <div className="products-grid products-grid--masonry">

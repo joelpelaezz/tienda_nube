@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { centsToPesos, getDiscountPercent } from '@/lib/products/pricing';
 
 // C4-TRACE: confirm and remove special prices before submitting a zero-priced simple product.
@@ -34,9 +34,8 @@ function PriceInput({
     defaultValue !== null && defaultValue !== undefined ? String(centsToPesos(defaultValue)) : ''
   );
   const [touched, setTouched] = useState(false);
-  const [error, setError] = useState<string>('');
 
-  const validate = useCallback((val: string): string => {
+  const validate = (val: string): string => {
     if (val.trim() === '') {
       if (required) return `${label} es obligatorio`;
       if (!allowEmpty) return `${label} es obligatorio`;
@@ -46,13 +45,9 @@ function PriceInput({
     if (!Number.isFinite(num)) return `${label} debe ser un número`;
     if (num < min) return `${label} debe ser mayor o igual a ${min}`;
     return '';
-  }, [allowEmpty, label, min, required]);
+  };
 
-  useEffect(() => {
-    if (touched) {
-      setError(validate(value));
-    }
-  }, [value, touched, validate]);
+  const error = touched ? validate(value) : '';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value);
@@ -60,7 +55,6 @@ function PriceInput({
 
   const handleBlur = () => {
     setTouched(true);
-    setError(validate(value));
   };
 
   return (
@@ -84,7 +78,6 @@ function PriceInput({
           onInvalid={(e) => {
             e.preventDefault();
             setTouched(true);
-            setError(validate((e.target as HTMLInputElement).value));
           }}
         />
       </div>

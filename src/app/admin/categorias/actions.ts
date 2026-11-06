@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
+import { requireAdmin } from '@/lib/auth';
 import { categories } from '@/drizzle/schema';
 import { asc, eq, isNull } from 'drizzle-orm';
 
@@ -17,6 +18,7 @@ function generateSlug(name: string): string {
 }
 
 export async function createCategory(formData: FormData) {
+  await requireAdmin();
   const name = formData.get('name') as string;
   const slug = formData.get('slug') as string || generateSlug(name);
   const parentId = formData.get('parentId') as string;
@@ -44,6 +46,7 @@ export async function createCategory(formData: FormData) {
 }
 
 export async function updateCategory(id: number, formData: FormData) {
+  await requireAdmin();
   const name = formData.get('name') as string;
   const slug = formData.get('slug') as string;
   const parentId = formData.get('parentId') as string;
@@ -78,6 +81,7 @@ export async function updateCategory(id: number, formData: FormData) {
 }
 
 export async function deleteCategory(id: number) {
+  await requireAdmin();
   // Check if category has children
   const children = await db.query.categories.findFirst({
     where: eq(categories.parentId, id),
@@ -92,6 +96,7 @@ export async function deleteCategory(id: number) {
 }
 
 export async function moveCategory(id: number, parentId: number | null) {
+  await requireAdmin();
   if (parentId === id) return { error: 'Una categoría no puede ser padre de sí misma.' };
 
   const allCategories = await db.select({ id: categories.id, parentId: categories.parentId }).from(categories);

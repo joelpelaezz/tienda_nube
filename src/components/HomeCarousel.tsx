@@ -38,9 +38,8 @@ export default function HomeCarousel({ slides }: HomeCarouselProps) {
     if (activeSlides.length > 1) setCurrent((previous) => (previous - 1 + activeSlides.length) % activeSlides.length);
   }, [activeSlides.length]);
 
-  useEffect(() => {
-    if (current >= activeSlides.length) setCurrent(0);
-  }, [activeSlides.length, current]);
+  // Persist the reset when slides shrink, even if they grow again later.
+  if (current > 0 && current >= activeSlides.length) setCurrent(0);
 
   useEffect(() => {
     if (!isAutoPlaying || activeSlides.length < 2) return;

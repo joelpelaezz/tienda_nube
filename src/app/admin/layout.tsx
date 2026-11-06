@@ -1,4 +1,5 @@
 import AdminLayout from '@/components/admin/AdminLayout';
+import { requireAdminPage } from '@/lib/auth';
 import './admin.css';
 
 export const metadata = {
@@ -6,10 +7,12 @@ export const metadata = {
   description: 'Panel de administración de Tendencia Shop',
 };
 
-export default function AdminRootLayout({
+export default async function AdminRootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // C4-TRACE: defense in depth using the same verified session as actions/APIs.
+  await requireAdminPage();
   return <AdminLayout>{children}</AdminLayout>;
 }

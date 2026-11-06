@@ -3,13 +3,16 @@ import { db } from '@/lib/db';
 import { stockMovements } from '@/drizzle/schema';
 import { translateMovementType } from '@/app/admin/inventario/stock-utils';
 import { desc, eq } from 'drizzle-orm';
+import { assertAdminRequest } from '@/lib/auth';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { variantId: string } },
+  { params }: { params: Promise<{ variantId: string }> },
 ) {
+  const authorization = await assertAdminRequest();
+  if (!authorization.ok) return authorization.response;
   try {
-    const variantId = Number(params.variantId);
+    const variantId = Number((await params).variantId);
 
     if (!Number.isInteger(variantId) || variantId <= 0) {
       return NextResponse.json({ error: 'Variante inválida' }, { status: 400 });

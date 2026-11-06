@@ -19,6 +19,10 @@ interface CategoryActionsProps {
   triggerId?: string;
 }
 
+const ErrorAlert = ({ text }: { text: string }) => (
+  <div className="admin-alert-error">{text}</div>
+);
+
 export function CategoryActions({ mode, category, categories = [], productCount, triggerId }: CategoryActionsProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -130,10 +134,6 @@ export function CategoryActions({ mode, category, categories = [], productCount,
       .replace(/-+/g, '-')
       .trim();
   };
-
-  const ErrorAlert = ({ text }: { text: string }) => (
-    <div className="admin-alert-error">{text}</div>
-  );
 
   // ─── Create ───
   if (mode === 'create') {

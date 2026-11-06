@@ -134,6 +134,8 @@ export default function VariantSelector({
         }
       });
       if (Object.keys(init).length > 0) {
+        // Keep option initialization and parent callbacks together after data loads.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedOptions(init);
         onSelect(variants[0]);
         if (onPriceChange && variants[0].price != null) {

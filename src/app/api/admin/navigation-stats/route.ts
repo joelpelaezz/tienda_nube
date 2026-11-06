@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server';
 import { count, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { contactMessages, newsletterSubscribers, shippingMethods } from '@/drizzle/schema';
+import { assertAdminRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const authorization = await assertAdminRequest();
+  if (!authorization.ok) return authorization.response;
   const [messages, subscribers, shipping] = await Promise.all([
     db.select({ value: count() }).from(contactMessages).where(eq(contactMessages.status, 'new')),
     db.select({ value: count() }).from(newsletterSubscribers).where(eq(newsletterSubscribers.status, 'subscribed')),

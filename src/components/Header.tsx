@@ -153,6 +153,8 @@ export default function Header() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && searchQuery.trim()) {
+                      // Search intentionally performs a full navigation, resetting header state.
+                      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
                       window.location.href = `/productos/?q=${encodeURIComponent(searchQuery)}`;
                     }
                   }}
@@ -206,6 +208,8 @@ export default function Header() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && searchQuery.trim()) {
+                    // Match the desktop search's full navigation and state reset.
+                    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
                     window.location.href = `/productos/?q=${encodeURIComponent(searchQuery)}`;
                   }
                 }}

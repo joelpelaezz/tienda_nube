@@ -1,21 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+
+const subscribe = () => () => {};
+const getSnapshot = () => !localStorage.getItem('cookies-accepted');
+const getServerSnapshot = () => false;
 
 export default function CookieBar() {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    // Check if user already accepted
-    const accepted = localStorage.getItem('cookies-accepted');
-    if (!accepted) {
-      setVisible(true);
-    }
-  }, []);
+  const [accepted, setAccepted] = useState(false);
+  const visible = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot) && !accepted;
 
   const handleAccept = () => {
     localStorage.setItem('cookies-accepted', 'true');
-    setVisible(false);
+    setAccepted(true);
   };
 
   if (!visible) return null;

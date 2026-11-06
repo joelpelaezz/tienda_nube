@@ -8,6 +8,7 @@ import { getEffectivePriceCents } from '@/lib/products/pricing';
 import { getCurrentSession } from '@/lib/auth';
 import { getSettings } from '@/app/admin/configuracion/actions';
 import { requireSellableUnitPrice, validateCouponRecord, type CouponValidationResult } from '@/lib/coupon-validation';
+import { parsePositiveId } from '@/lib/payment-security';
 
 // C4-TRACE: order totals use sellable DB prices and coupons are revalidated under a transaction row lock.
 
@@ -55,7 +56,8 @@ export async function createOrder(
   couponCodeInput?: string | null
 ) {
   const session = await getCurrentSession();
-  if (!session) {
+  const userId = parsePositiveId(session?.userId);
+  if (!userId) {
     throw new Error('Iniciá sesión para completar tu compra');
   }
 
@@ -201,6 +203,11 @@ export async function createOrder(
 
     const total = subtotal - discount + shippingCost;
 
+    // C4-TRACE: free checkouts are unsupported; reject before reservations or coupon consumption.
+    if (!Number.isSafeInteger(total) || total <= 0) {
+      throw new Error('El total del pedido debe ser mayor a cero. Modificá el descuento o el carrito.');
+    }
+
     for (const item of normalizedCartItems) {
       const product = dbProducts.find((candidate) => candidate.id === item.id);
       if (!product || product.productType === 'digital') continue;
@@ -254,6 +261,8 @@ export async function createOrder(
       .values({
         orderNumber,
         customerId: customerId || null,
+        // C4-TRACE: ownership comes exclusively from the validated session.
+        userId,
         status: 'pending',
         total,
         discount,

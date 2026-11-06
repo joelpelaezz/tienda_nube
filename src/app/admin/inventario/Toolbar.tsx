@@ -21,10 +21,12 @@ export default function Toolbar({
   onClearFilters,
 }: ToolbarProps) {
   const [draftSearch, setDraftSearch] = useState(searchQuery);
+  const [previousSearch, setPreviousSearch] = useState(searchQuery);
 
-  useEffect(() => {
+  if (searchQuery !== previousSearch) {
+    setPreviousSearch(searchQuery);
     setDraftSearch(searchQuery);
-  }, [searchQuery]);
+  }
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {

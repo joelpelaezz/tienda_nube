@@ -4,12 +4,15 @@ import { revalidatePath } from 'next/cache';
 import { asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { contactMessages } from '@/drizzle/schema';
+import { requireAdmin } from '@/lib/auth';
 
 export async function getContactMessages() {
+  await requireAdmin();
   return db.select().from(contactMessages).orderBy(asc(contactMessages.createdAt));
 }
 
 export async function updateContactMessageStatus(formData: FormData) {
+  await requireAdmin();
   const id = Number(formData.get('id'));
   const status = String(formData.get('status') || 'read');
   if (!Number.isInteger(id) || !['new', 'read', 'replied', 'archived'].includes(status)) return;

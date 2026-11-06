@@ -7,16 +7,18 @@ import ProductsTable from '@/components/admin/ProductsTable';
 export const dynamic = 'force-dynamic';
 
 interface ProductsPageProps {
-  searchParams: {
+  searchParams: Promise<{
     page?: string;
     search?: string;
     category?: string;
     sort?: string;
     status?: 'all' | 'active' | 'inactive';
-  };
+  }>;
 }
 
-export default async function AdminProductsPage({ searchParams }: ProductsPageProps) {
+export default async function AdminProductsPage({ searchParams: searchParamsPromise }: ProductsPageProps) {
+  // C4-TRACE: Next.js route props are asynchronous; preserve existing filter behavior.
+  const searchParams = await searchParamsPromise;
   const page = parseInt(searchParams.page || '1');
   const perPage = 20;
   const search = searchParams.search || '';

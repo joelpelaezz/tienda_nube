@@ -92,48 +92,51 @@ export default function VariantEditor({
       .catch(() => {});
   }, [isOpen]);
 
-  // Pre-populate from existing variants when modal opens
-  useEffect(() => {
-    if (!isOpen || variantTypes.length === 0 || existingVariants.length === 0) return;
+  // Reset the editable data when the same inputs that previously drove the effect change.
+  const [previousInputs, setPreviousInputs] = useState({ isOpen: false, variantTypes, existingVariants });
+  if (previousInputs.isOpen !== isOpen || previousInputs.variantTypes !== variantTypes || previousInputs.existingVariants !== existingVariants) {
+    setPreviousInputs({ isOpen, variantTypes, existingVariants });
+    if (isOpen && variantTypes.length > 0 && existingVariants.length > 0) {
 
-    // Group existing option_ids by variant_type_id
-    const typeIdToOptionIds = new Map<number, number[]>();
-    for (const v of existingVariants) {
-      for (const optIdStr of v.optionIds) {
-        const optId = parseInt(optIdStr);
-        const vt = variantTypes.find((t) =>
-          t.options.some((o) => o.id === optId)
-        );
-        if (vt) {
-          if (!typeIdToOptionIds.has(vt.id)) typeIdToOptionIds.set(vt.id, []);
-          const ids = typeIdToOptionIds.get(vt.id)!;
-          if (!ids.includes(optId)) ids.push(optId);
+      // Group existing option_ids by variant_type_id
+      const typeIdToOptionIds = new Map<number, number[]>();
+      for (const v of existingVariants) {
+        for (const optIdStr of v.optionIds) {
+          const optId = parseInt(optIdStr);
+          const vt = variantTypes.find((t) =>
+            t.options.some((o) => o.id === optId)
+          );
+          if (vt) {
+            if (!typeIdToOptionIds.has(vt.id)) typeIdToOptionIds.set(vt.id, []);
+            const ids = typeIdToOptionIds.get(vt.id)!;
+            if (!ids.includes(optId)) ids.push(optId);
+          }
         }
       }
+
+      // Build selectedVariantTypes from grouped data
+      const preSelected: SelectedVariantType[] = [];
+      typeIdToOptionIds.forEach((optionIds, typeId) => {
+        const vt = variantTypes.find((t) => t.id === typeId);
+        if (vt) {
+          preSelected.push({ variantTypeId: vt.id, variantTypeName: vt.name, optionIds });
+        }
+      });
+      setSelectedVariantTypes(preSelected);
+
+      // Pre-populate combinations table from existing variants
+      const existingCombos: Combination[] = existingVariants.map((v) => ({
+        id: v.id,
+        optionIds: v.optionIds.map(Number),
+        optionNames: v.name,
+        stock: v.stock ?? 0,
+        price: v.price != null ? (v.price / 100).toString() : '0',
+        priceOffer: v.priceOffer != null ? (v.priceOffer / 100).toString() : '',
+        imageUrl: v.imageUrl ?? '',
+      }));
+      setCombinations(existingCombos);
     }
-
-    // Build selectedVariantTypes from grouped data
-    const preSelected: SelectedVariantType[] = [];
-    typeIdToOptionIds.forEach((optionIds, typeId) => {
-      const vt = variantTypes.find((t) => t.id === typeId);
-      if (vt) {
-        preSelected.push({ variantTypeId: vt.id, variantTypeName: vt.name, optionIds });
-      }
-    });
-    setSelectedVariantTypes(preSelected);
-
-    // Pre-populate combinations table from existing variants
-    const existingCombos: Combination[] = existingVariants.map((v) => ({
-      id: v.id,
-      optionIds: v.optionIds.map(Number),
-      optionNames: v.name,
-      stock: v.stock ?? 0,
-       price: v.price != null ? (v.price / 100).toString() : '0',
-      priceOffer: v.priceOffer != null ? (v.priceOffer / 100).toString() : '',
-      imageUrl: v.imageUrl ?? '',
-    }));
-    setCombinations(existingCombos);
-  }, [isOpen, variantTypes, existingVariants]);
+  }
 
   const addVariantType = (vt: VariantType) => {
     if (selectedVariantTypes.find((s) => s.variantTypeId === vt.id)) return;

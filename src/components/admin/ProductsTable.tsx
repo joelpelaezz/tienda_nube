@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -46,11 +46,13 @@ export default function ProductsTable({ initialProducts, categories }: ProductsT
   const [priceValue, setPriceValue] = useState('');
   const [badge, setBadge] = useState('');
   const [products, setProducts] = useState(initialProducts);
+  const [previousProducts, setPreviousProducts] = useState(initialProducts);
   const selectedCount = selected.size;
 
-  useEffect(() => {
+  if (initialProducts !== previousProducts) {
+    setPreviousProducts(initialProducts);
     setProducts(initialProducts);
-  }, [initialProducts]);
+  }
 
   const formatPrice = (cents: number | null) => {
     if (!cents) return '—';

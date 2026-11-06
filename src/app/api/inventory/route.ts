@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getInventoryProducts } from '@/app/admin/inventario/actions';
 import type { InventoryStatusFilter } from '@/app/admin/inventario/types';
+import { assertAdminRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const authorization = await assertAdminRequest();
+  if (!authorization.ok) return authorization.response;
   try {
     const { searchParams } = new URL(request.url);
     const page = Number(searchParams.get('page') ?? '1');

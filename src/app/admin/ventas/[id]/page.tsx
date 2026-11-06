@@ -2,14 +2,14 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/db';
-import { orders, orderItems, customers, productImages } from '@/drizzle/schema';
+import { orders, orderPayments, orderItems, customers, productImages } from '@/drizzle/schema';
 import { eq, asc, inArray } from 'drizzle-orm';
 import OrderStatusForm from './OrderStatusForm';
 
 export const dynamic = 'force-dynamic';
 
 interface OrderDetailPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 function formatPrice(cents: number | null): string {
@@ -51,13 +51,13 @@ function getStatusBadgeClass(status: string): string {
 }
 
 export default async function OrderDetailPage({ params }: OrderDetailPageProps) {
-  const orderId = parseInt(params.id);
+  const orderId = parseInt((await params).id);
   if (isNaN(orderId)) notFound();
 
   const order = await db.select().from(orders).where(eq(orders.id, orderId)).then(r => r[0]);
   if (!order) notFound();
 
-  const [items, customer] = await Promise.all([
+  const [items, customer, payments] = await Promise.all([
     db.select({
       id: orderItems.id,
       productName: orderItems.productName,
@@ -70,6 +70,7 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
     order.customerId
       ? db.select().from(customers).where(eq(customers.id, order.customerId)).then(r => r[0])
       : null,
+    db.select().from(orderPayments).where(eq(orderPayments.orderId, orderId)),
   ]);
 
   // Fetch images for order items
@@ -197,6 +198,13 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
           {/* Payment info */}
           <div className="admin-card">
             <h3 className="admin-detail-section-title">Pago</h3>
+            {/* C4-TRACE: surface provider exceptions without changing fulfillment. */}
+            {payments.filter(p => p.reconciliationReason).map(p => (
+              <div key={p.providerPaymentId} role="alert" style={{ padding: '12px', marginBottom: '12px', background: '#fff3cd', color: '#664d03' }}>
+                <strong>Requiere conciliación:</strong> {p.reconciliationReason === 'refund' ? 'reintegro informado por Mercado Pago' : p.reconciliationReason === 'reservation_error' ? 'reserva inconsistente' : 'pago tardío o adicional'}.
+                {' '}Pago {p.providerPaymentId}; reintegrado ${(p.refundedAmount / 100).toFixed(2)}. Revisá el pedido manualmente.
+              </div>
+            ))}
             <div className="admin-detail-row">
               <span className="admin-detail-row-label">Método</span>
               <span className="admin-detail-row-value">Mercado Pago</span>

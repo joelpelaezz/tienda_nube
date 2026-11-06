@@ -17,7 +17,7 @@ import { formatPrice } from '@/lib/utils/format';
 import type { ProductCardData, ProductDetailData } from '@/types/product';
 import type { Metadata } from 'next';
 import { getPaymentMethods, getSettings } from '@/app/admin/configuracion/actions';
-import { getShippingConfiguration } from '@/app/admin/envios/actions';
+import { getPublicShippingMethods } from '@/lib/public-shipping';
 import { getPricePresentation, isSellablePrice } from '@/lib/products/pricing';
 
 interface ProductPageProps {
@@ -207,8 +207,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const transferPayment = activePaymentMethods.find((method) => method.id === 'transferencia');
   const hasTransferPayment = transferPayment != null;
   const hasInstallmentsPayment = activePaymentMethods.some((method) => method.type === 'card' || method.type === 'card_credit');
-  const { methods: shippingMethods } = await getShippingConfiguration();
-  const hasActiveShippingMethod = shippingMethods.some((method) => method.isActive);
+  const shippingMethods = await getPublicShippingMethods();
+  const hasActiveShippingMethod = shippingMethods.length > 0;
   const shareSettings = await getSettings();
   const publicSiteUrl = (shareSettings.publicSiteUrl || 'https://www.tendenciashop.com.ar').replace(/\/+$/, '');
   const shareUrl = `${publicSiteUrl}/productos/${product.slug}/`;

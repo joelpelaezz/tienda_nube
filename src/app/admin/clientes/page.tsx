@@ -7,10 +7,10 @@ import { eq, sql, desc, asc, ilike, and, or } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 interface ClientesPageProps {
-  searchParams: {
+  searchParams: Promise<{
     page?: string;
     search?: string;
-  };
+  }>;
 }
 
 async function getCustomersData(page: number, perPage: number, search: string) {
@@ -125,7 +125,8 @@ function buildUrl(overrides: Record<string, string | undefined>) {
   return `/admin/clientes?${params.toString()}`;
 }
 
-export default async function ClientesPage({ searchParams }: ClientesPageProps) {
+export default async function ClientesPage({ searchParams: searchParamsPromise }: ClientesPageProps) {
+  const searchParams = await searchParamsPromise;
   const page = parseInt(searchParams.page || '1');
   const perPage = 20;
   const search = searchParams.search || '';

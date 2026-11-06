@@ -1,6 +1,7 @@
 import 'server-only';
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
+import { redirect } from 'next/navigation';
 
 /**
  * C4-TRACE: Phase 1 — centralized admin guard reused by every privileged
@@ -43,6 +44,14 @@ export async function requireAdmin(): Promise<AdminSession> {
   const current = await getCurrentSession();
   if (!current) throw new AdminAuthError('unauthenticated', 401);
   if (current.role !== 'admin') throw new AdminAuthError('forbidden', 403);
+  return current;
+}
+
+/** Page layout: send unauthenticated users to login and customers to the storefront. */
+export async function requireAdminPage(): Promise<AdminSession> {
+  const current = await getCurrentSession();
+  if (!current) redirect('/ingresar');
+  if (current.role !== 'admin') redirect('/');
   return current;
 }
 

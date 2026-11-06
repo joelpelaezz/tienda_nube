@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, index, unique, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, boolean, timestamp, primaryKey, index, unique, jsonb, check, foreignKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // ──────────────────────────────────────────────────────
 // NextAuth.js Tables
@@ -61,9 +62,7 @@ export const categories = pgTable('categories', {
 export const productCategories = pgTable('product_categories', {
   productId: integer('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
   categoryId: integer('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
-}, (table) => ({
-  pk: { columns: [table.productId, table.categoryId] },
-}));
+});
 
 // ──────────────────────────────────────────────────────
 // Products
@@ -136,7 +135,7 @@ export const productVariants = pgTable('product_variants', {
   priceOffer: integer('price_offer'),
   imageUrl: text('image_url'),
   stock: integer('stock').default(0),
-  reservedStock: integer('reserved_stock').default(0),  // Stock locked by pending orders
+  reservedStock: integer('reserved_stock').notNull().default(0),  // Stock locked by pending orders
   variantTypeId: integer('variant_type_id').references(() => variantTypes.id),
   // Per-variant shipping
   weight: integer('weight'),
@@ -147,7 +146,12 @@ export const productVariants = pgTable('product_variants', {
   sku: text('sku'),
   barcode: text('barcode'),
   isVisible: boolean('is_visible').default(true),
-});
+}, (table) => ({
+  priceOfferLessThanPrice: check(
+    'product_variants_price_offer_less_than_price',
+    sql`${table.priceOffer} IS NULL OR ${table.price} IS NULL OR ${table.priceOffer} < ${table.price}`
+  ),
+}));
 
 // Normalized relationship between a product variant and its selected options.
 export const productVariantOptions = pgTable('product_variant_options', {
@@ -221,6 +225,8 @@ export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
   orderNumber: text('order_number').notNull().unique(),
   customerId: integer('customer_id'),
+  // C4-TRACE: legacy orders remain unowned and cannot start a public payment.
+  userId: integer('user_id'),
   status: text('status').notNull().default('pending'),  // pending, confirmed, packed, shipped, delivered, cancelled
   total: integer('total').notNull().default(0),
   discount: integer('discount').default(0),  // discount applied in cents
@@ -232,7 +238,50 @@ export const orders = pgTable('orders', {
   mpPaymentId: text('mp_payment_id'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  statusCreatedAtIdx: index('orders_status_created_at_idx')
+    .on(table.status, table.createdAt)
+    .where(sql`${table.status} = 'pending'`),
+  userIdFk: foreignKey({
+    name: 'orders_user_id_fkey',
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }),
+}));
+
+// C4-TRACE: one durable provider payment, including exceptions requiring manual reconciliation.
+export const orderPayments = pgTable('order_payments', {
+  providerPaymentId: text('provider_payment_id').primaryKey(),
+  orderId: integer('order_id').notNull(),
+  amount: integer('amount').notNull(),
+  refundedAmount: integer('refunded_amount').notNull().default(0),
+  providerStatus: text('provider_status').notNull(),
+  reconciliationReason: text('reconciliation_reason'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  orderIdIdx: index('order_payments_order_id_idx').on(table.orderId),
+  orderIdFk: foreignKey({
+    name: 'order_payments_order_id_fkey',
+    columns: [table.orderId],
+    foreignColumns: [orders.id],
+  }),
+}));
+
+// Provider exceptions may have no trustworthy order reference.
+export const paymentExceptions = pgTable('payment_exceptions', {
+  providerPaymentId: text('provider_payment_id').notNull(),
+  reason: text('reason').notNull(),
+  orderId: integer('order_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.providerPaymentId, table.reason] }),
+  orderIdFk: foreignKey({
+    name: 'payment_exceptions_order_id_fkey',
+    columns: [table.orderId],
+    foreignColumns: [orders.id],
+  }),
+}));
 
 // ──────────────────────────────────────────────────────
 // Settings (key-value store for configurable options)
@@ -347,9 +396,11 @@ export const orderItems = pgTable('order_items', {
   id: serial('id').primaryKey(),
   orderId: integer('order_id').notNull(),
   productId: integer('product_id'),
-  variantId: integer('variant_id'),  // NEW: references productVariants.id
+  variantId: integer('variant_id').references(() => productVariants.id, { onDelete: 'set null' }),
   stockReserved: boolean('stock_reserved').notNull().default(false),
   productName: text('product_name').notNull(),
   quantity: integer('quantity').notNull().default(1),
   unitPrice: integer('unit_price').notNull(),
-});
+}, (table) => ({
+  variantIdIdx: index('order_items_variant_id_idx').on(table.variantId),
+}));

@@ -240,6 +240,7 @@ export async function getInventoryProducts(options: {
   search?: string;
   status?: InventoryStatusFilter;
 } = {}): Promise<InventoryResult> {
+  await requireAdmin();
   const page = normalizePage(options.page);
   const perPage = PER_PAGE;
   const offset = (page - 1) * perPage;
@@ -273,8 +274,8 @@ export async function getInventoryProducts(options: {
   };
 }
 
-export async function updateVariantStock(variantId: number, newStock: number, userId?: number) {
-  await requireAdmin();
+export async function updateVariantStock(variantId: number, newStock: number, _userId?: number) {
+  const admin = await requireAdmin();
   if (!Number.isInteger(variantId) || variantId <= 0) {
     throw new Error('Variante inválida');
   }
@@ -283,48 +284,47 @@ export async function updateVariantStock(variantId: number, newStock: number, us
     throw new Error('El stock debe ser un número entero mayor o igual a 0');
   }
 
-  const [variant] = await db
-    .select({ id: productVariants.id, stock: productVariants.stock, reservedStock: productVariants.reservedStock })
-    .from(productVariants)
-    .where(eq(productVariants.id, variantId))
-    .limit(1);
-
-  if (!variant) {
-    throw new Error('Variante no encontrada');
-  }
-
-  // Prevent setting stock below reserved amount
-  const reserved = variant.reservedStock ?? 0;
-  if (newStock < reserved) {
-    throw new Error(
-      `No se puede dejar el stock en ${newStock}: hay ${reserved} unidades reservadas por órdenes pending. Liberá esas órdenes primero o usá un valor >= ${reserved}.`
-    );
-  }
-
-  const currentStock = variant.stock ?? 0;
-  const quantity = newStock - currentStock;
-
-  if (quantity === 0) {
-    return { success: true, movement: null, unchanged: true };
-  }
-
   const [movement] = await db.transaction(async (tx) => {
-    await tx
-      .update(productVariants)
-      .set({ stock: newStock })
-      .where(eq(productVariants.id, variantId));
+    // The reservation checkout updates this same row atomically. Locking it
+    // first makes the reserved-stock validation and movement snapshot current.
+    const [variant] = await tx
+      .select({ id: productVariants.id, stock: productVariants.stock, reservedStock: productVariants.reservedStock, productId: productVariants.productId })
+      .from(productVariants)
+      .where(eq(productVariants.id, variantId))
+      .for('update')
+      .limit(1);
 
-    return tx
-      .insert(stockMovements)
-      .values({
-        variantId,
-        movementType: 'ajuste',
-        quantity,
-        stockAfter: newStock,
-        createdBy: userId ?? null,
-      })
-      .returning();
+    if (!variant) throw new Error('Variante no encontrada');
+
+    const [product] = await tx
+      .select({ productType: products.productType })
+      .from(products)
+      .where(eq(products.id, variant.productId))
+      .limit(1);
+    if (!product || product.productType === 'digital') throw new Error('Variante no encontrada');
+
+    const reserved = variant.reservedStock ?? 0;
+    if (newStock < reserved) {
+      throw new Error(
+        `No se puede dejar el stock en ${newStock}: hay ${reserved} unidades reservadas por órdenes pending. Liberá esas órdenes primero o usá un valor >= ${reserved}.`
+      );
+    }
+
+    const currentStock = variant.stock ?? 0;
+    const quantity = newStock - currentStock;
+    if (quantity === 0) return [];
+
+    await tx.update(productVariants).set({ stock: newStock }).where(eq(productVariants.id, variantId));
+    return tx.insert(stockMovements).values({
+      variantId,
+      movementType: 'ajuste',
+      quantity,
+      stockAfter: newStock,
+      createdBy: Number.isSafeInteger(Number(admin.userId)) && Number(admin.userId) > 0 ? Number(admin.userId) : null,
+    }).returning();
   });
+
+  if (!movement) return { success: true, movement: null, unchanged: true };
 
   revalidatePath('/admin/inventario');
   revalidatePath('/admin/productos');
@@ -344,42 +344,45 @@ export async function updateVariantStock(variantId: number, newStock: number, us
   };
 }
 
-export async function updateProductStock(productId: number, newStock: number, userId?: number) {
-  await requireAdmin();
+export async function updateProductStock(productId: number, newStock: number, _userId?: number) {
+  const admin = await requireAdmin();
   if (!Number.isInteger(productId) || productId <= 0) throw new Error('Producto inválido');
   if (!Number.isInteger(newStock) || newStock < 0) {
     throw new Error('El stock debe ser un número entero mayor o igual a 0');
   }
 
-  const [product] = await db
-    .select({ id: products.id, stock: products.stock, reservedStock: products.reservedStock, productType: products.productType })
-    .from(products)
-    .where(eq(products.id, productId))
-    .limit(1);
-  if (!product || product.productType === 'digital') throw new Error('Producto físico no encontrado');
-
-  const [variant] = await db.select({ id: productVariants.id }).from(productVariants).where(eq(productVariants.productId, productId)).limit(1);
-  if (variant) throw new Error('Este producto controla stock por variante');
-
-  const reserved = product.reservedStock ?? 0;
-  if (newStock < reserved) {
-    throw new Error(`No se puede dejar el stock en ${newStock}: hay ${reserved} unidades reservadas.`);
-  }
-
-  const currentStock = product.stock ?? 0;
-  const quantity = newStock - currentStock;
-  if (quantity === 0) return { success: true, movement: null, unchanged: true };
-
   const [movement] = await db.transaction(async (tx) => {
+    const [product] = await tx
+      .select({ id: products.id, stock: products.stock, reservedStock: products.reservedStock, productType: products.productType })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1);
+    if (!product || product.productType === 'digital') throw new Error('Producto físico no encontrado');
+
+    const [variant] = await tx.select({ id: productVariants.id }).from(productVariants).where(eq(productVariants.productId, productId)).limit(1);
+    if (variant) throw new Error('Este producto controla stock por variante');
+
+    const reserved = product.reservedStock ?? 0;
+    if (newStock < reserved) {
+      throw new Error(`No se puede dejar el stock en ${newStock}: hay ${reserved} unidades reservadas.`);
+    }
+
+    const currentStock = product.stock ?? 0;
+    const quantity = newStock - currentStock;
+    if (quantity === 0) return [];
+
     await tx.update(products).set({ stock: newStock }).where(eq(products.id, productId));
     return tx.insert(productStockMovements).values({
       productId,
       movementType: 'ajuste',
       quantity,
       stockAfter: newStock,
-      createdBy: userId ?? null,
+      createdBy: Number.isSafeInteger(Number(admin.userId)) && Number(admin.userId) > 0 ? Number(admin.userId) : null,
     }).returning();
   });
+
+  if (!movement) return { success: true, movement: null, unchanged: true };
 
   revalidatePath('/admin/inventario');
   revalidatePath('/admin/productos');

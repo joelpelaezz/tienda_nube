@@ -12,11 +12,11 @@ import { submitProductEdit } from '../actions';
 export const dynamic = 'force-dynamic';
 
 interface ProductEditPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function AdminProductEditPage({ params }: ProductEditPageProps) {
-  const productId = parseInt(params.id);
+  const productId = parseInt((await params).id);
 
   if (isNaN(productId)) notFound();
 

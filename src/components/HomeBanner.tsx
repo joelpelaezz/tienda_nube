@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import type { HomeBannerData } from '@/app/admin/configuracion/actions';
 
 interface HomeBannerProps {
@@ -9,17 +9,13 @@ interface HomeBannerProps {
 }
 
 function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
-
-  useEffect(() => {
+  const subscribe = useCallback((notify: () => void) => {
     const media = window.matchMedia(query);
-    setMatches(media.matches);
-    const listener = (e: MediaQueryListEvent) => setMatches(e.matches);
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
+    media.addEventListener('change', notify);
+    return () => media.removeEventListener('change', notify);
   }, [query]);
-
-  return matches;
+  const getSnapshot = useCallback(() => window.matchMedia(query).matches, [query]);
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
 
 export default function HomeBanner({ data }: HomeBannerProps) {

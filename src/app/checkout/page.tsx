@@ -240,21 +240,11 @@ export default function CheckoutPage() {
       const mpEnabled = storeSettings.paymentMpEnabled &&
         process.env.NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY !== 'TEST-xxxxxxxxxxxxxxxxxxxx';
       if (mpEnabled) {
-        const discount = result.discount ?? 0;
-        const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        const mpItems = discount > 0 && subtotal > 0
-          ? items.map((item) => {
-              const itemShare = (item.price * item.quantity) / subtotal;
-              const itemDiscount = Math.round(discount * itemShare);
-              const discountedPrice = item.price - Math.round(itemDiscount / item.quantity);
-              return { ...item, price: discountedPrice };
-            })
-          : items;
-
+        // C4-TRACE: the server derives the payment amount from the saved order only.
         const prefRes = await fetch('/api/mercadopago/create-preference', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: result.orderId, items: mpItems }),
+          body: JSON.stringify({ orderId: result.orderId }),
         });
 
         if (!prefRes.ok) {

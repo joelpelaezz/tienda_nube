@@ -56,18 +56,20 @@ function getVariantColor(name: string): string {
 }
 
 export default function QuickShopModal({ product, onClose }: QuickShopModalProps) {
-  const [selectedVariant, setSelectedVariant] = useState<number | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<number | null>(product?.variants?.[0]?.id ?? null);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [previousProduct, setPreviousProduct] = useState(product);
   const addItem = useCartStore((s) => s.addItem);
 
-  useEffect(() => {
+  if (previousProduct !== product) {
+    setPreviousProduct(product);
     if (product?.variants && product.variants.length > 0) {
       setSelectedVariant(product.variants[0].id);
     }
     setQuantity(1);
     setAdded(false);
-  }, [product]);
+  }
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {

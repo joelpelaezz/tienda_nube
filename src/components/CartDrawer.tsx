@@ -38,12 +38,15 @@ export default function CartDrawer() {
   useEffect(() => {
     const requestedItems = JSON.parse(itemIdentity) as Array<{ productId: number; variantId: number | null }>;
     if (!isOpen || requestedItems.length === 0) {
+      // Reset immediately when the drawer closes or its last item is removed.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAvailabilityLoading(false);
       setAvailabilityError(false);
       return;
     }
 
     const controller = new AbortController();
+    // Disable checkout while this specific availability request is pending.
     setAvailabilityLoading(true);
     setAvailabilityError(false);
     fetch('/api/inventory/availability', {

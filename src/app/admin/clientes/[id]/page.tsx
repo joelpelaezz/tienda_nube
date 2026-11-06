@@ -8,7 +8,7 @@ import { eq, desc } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 interface CustomerDetailPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 function formatPrice(cents: number | null): string {
@@ -44,7 +44,7 @@ function getStatusBadgeClass(status: string): string {
 }
 
 export default async function CustomerDetailPage({ params }: CustomerDetailPageProps) {
-  const customerId = parseInt(params.id);
+  const customerId = parseInt((await params).id);
   if (isNaN(customerId)) notFound();
 
   const customer = await db.select().from(customers).where(eq(customers.id, customerId)).then(r => r[0]);

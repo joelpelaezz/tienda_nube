@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { shippingMethods, shippingRules } from '@/drizzle/schema';
+import { requireAdmin } from '@/lib/auth';
 
 function moneyToCents(value: FormDataEntryValue | null) {
   const parsed = Number(String(value || '').replace(',', '.'));
@@ -11,12 +12,14 @@ function moneyToCents(value: FormDataEntryValue | null) {
 }
 
 export async function getShippingConfiguration() {
+  await requireAdmin();
   const methods = await db.select().from(shippingMethods).orderBy(asc(shippingMethods.position));
   const rules = await db.select().from(shippingRules).orderBy(asc(shippingRules.position));
   return { methods, rules };
 }
 
 export async function createShippingMethod(formData: FormData) {
+  await requireAdmin();
   const code = String(formData.get('code') || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const name = String(formData.get('name') || '').trim();
   if (!code || !name) return;
@@ -36,6 +39,7 @@ export async function createShippingMethod(formData: FormData) {
 }
 
 export async function updateShippingMethod(formData: FormData) {
+  await requireAdmin();
   const id = Number(formData.get('id'));
   if (!Number.isInteger(id)) return;
 
@@ -53,6 +57,7 @@ export async function updateShippingMethod(formData: FormData) {
 }
 
 export async function saveShippingRule(formData: FormData) {
+  await requireAdmin();
   const id = Number(formData.get('id'));
   const shippingMethodId = Number(formData.get('shippingMethodId'));
   if (!Number.isInteger(shippingMethodId)) return;

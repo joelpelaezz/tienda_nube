@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateVariantStock } from '@/app/admin/inventario/actions';
+import { assertAdminRequest } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
+  const authorization = await assertAdminRequest();
+  if (!authorization.ok) return authorization.response;
   try {
     const body = await request.json();
     const variantId = Number(body.variantId);

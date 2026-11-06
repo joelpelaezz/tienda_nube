@@ -1,16 +1,16 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { orders, orderItems, customers } from '@/drizzle/schema';
-import { eq, sql, desc, ilike, and, or, count, inArray } from 'drizzle-orm';
+import { orders, orderPayments, paymentExceptions, orderItems, customers } from '@/drizzle/schema';
+import { eq, sql, desc, ilike, and, or, count, inArray, isNotNull } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
 interface VentasPageProps {
-  searchParams: {
+  searchParams: Promise<{
     page?: string;
     search?: string;
     status?: string;
-  };
+  }>;
 }
 
 async function getOrdersData(page: number, perPage: number, search: string, statusFilter: string) {
@@ -136,7 +136,8 @@ function buildUrl(overrides: Record<string, string | undefined>) {
   return `/admin/ventas?${params.toString()}`;
 }
 
-export default async function VentasPage({ searchParams }: VentasPageProps) {
+export default async function VentasPage({ searchParams: searchParamsPromise }: VentasPageProps) {
+  const searchParams = await searchParamsPromise;
   const page = parseInt(searchParams.page || '1');
   const perPage = 20;
   const search = searchParams.search || '';
@@ -144,6 +145,11 @@ export default async function VentasPage({ searchParams }: VentasPageProps) {
   const offset = (page - 1) * perPage;
 
   const { orders: ordersList, total, statusCounts } = await getOrdersData(page, perPage, search, statusFilter);
+  const paymentAlerts = await db.select({ orderId: orders.id, orderNumber: orders.orderNumber, paymentId: orderPayments.providerPaymentId, reason: orderPayments.reconciliationReason })
+    .from(orderPayments).innerJoin(orders, eq(orderPayments.orderId, orders.id))
+    .where(isNotNull(orderPayments.reconciliationReason)).orderBy(desc(orderPayments.updatedAt));
+  const providerAlerts = await db.select({ paymentId: paymentExceptions.providerPaymentId, reason: paymentExceptions.reason, orderId: paymentExceptions.orderId, orderNumber: orders.orderNumber })
+    .from(paymentExceptions).leftJoin(orders, eq(paymentExceptions.orderId, orders.id)).orderBy(desc(paymentExceptions.createdAt));
   const counts = getStatusCounts(statusCounts);
   const totalPages = Math.ceil(total / perPage);
 
@@ -157,6 +163,16 @@ export default async function VentasPage({ searchParams }: VentasPageProps) {
 
   return (
     <div>
+      {/* C4-TRACE: exceptions are discoverable independently of order filters. */}
+      {(paymentAlerts.length > 0 || providerAlerts.length > 0) && <div role="alert" className="admin-card">
+        <strong>Pagos que requieren conciliación ({paymentAlerts.length + providerAlerts.length})</strong>
+        {paymentAlerts.map(alert => <div key={alert.paymentId}>
+          <Link href={`/admin/ventas/${alert.orderId}`}>{alert.orderNumber}</Link> — pago {alert.paymentId}: {alert.reason === 'refund' ? 'reintegro' : alert.reason === 'reservation_error' ? 'reserva inconsistente' : 'pago tardío o adicional'}
+        </div>)}
+        {providerAlerts.map(alert => <div key={`${alert.paymentId}-${alert.reason}`}>
+          {alert.orderId ? <Link href={`/admin/ventas/${alert.orderId}`}>{alert.orderNumber}</Link> : 'Pedido no vinculado'} — pago {alert.paymentId}: {({ chargeback: 'contracargo', provider_state: 'estado del proveedor requiere revisión', provider_id_mismatch: 'identificador del proveedor inconsistente', invalid_reference: 'referencia inválida o ausente', unknown_order: 'pedido desconocido', payment_mismatch: 'importe o moneda inconsistente', invalid_refund: 'importe de reintegro inválido' } as Record<string, string>)[alert.reason] ?? 'revisar pago'}
+        </div>)}
+      </div>}
       {/* Header */}
       <div className="admin-page-header">
         <h1 className="admin-page-title">Ventas</h1>

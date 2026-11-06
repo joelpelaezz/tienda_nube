@@ -127,6 +127,27 @@
       "when": 1792497100140,
       "tag": "0017_nosy_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792497100141,
+      "tag": "0018_add_order_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792497100142,
+      "tag": "0019_order_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792497100143,
+      "tag": "0020_payment_exceptions",
+      "breakpoints": true
     }
   ]
 }

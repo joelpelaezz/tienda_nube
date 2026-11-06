@@ -14,7 +14,8 @@ export async function updateOrderStatus(orderId: number, status: string) {
   }
 
   await db.transaction(async (tx) => {
-    const [order] = await tx.select({ id: orders.id, status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    // C4-TRACE: serialize manual transitions with webhook confirmation and expiry.
+    const [order] = await tx.select({ id: orders.id, status: orders.status }).from(orders).where(eq(orders.id, orderId)).for('update').limit(1);
     if (!order) throw new Error('No encontramos el pedido.');
     if (order.status === status) return;
     if (status === 'pending' && order.status !== 'pending') {

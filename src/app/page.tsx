@@ -1,4 +1,5 @@
 import Header from '@/components/Header';
+import Link from 'next/link';
 import Footer from '@/components/Footer';
 import ProductCard from '@/components/ProductCard';
 import CartDrawer from '@/components/CartDrawer';
@@ -13,6 +14,8 @@ import type { ProductCardData } from '@/types/product';
 import type { Metadata } from 'next';
 import { getHomeBanner, getHomeCarouselSlides, getPaymentMethods, getSettings } from '@/app/admin/configuracion/actions';
 import { getVariantColorMetadata } from '@/lib/products/variant-color-metadata';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Tendencia Shop - Tu estilo capibara, nuestra tendencia',
@@ -245,9 +248,9 @@ export default async function HomePage() {
               ))}
             </div>
             <div className="home-section-action">
-              <a href="/productos/" className="home-btn-more">
+              <Link href="/productos/" className="home-btn-more">
                 VER TODOS LOS PRODUCTOS
-              </a>
+              </Link>
             </div>
           </div>
         </section>
