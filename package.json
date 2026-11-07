@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3090",
+    "prebuild": "tsx scripts/baseline-preview.ts",
     "build": "next build",
     "start": "next start -p 3090",
     "lint": "eslint .",

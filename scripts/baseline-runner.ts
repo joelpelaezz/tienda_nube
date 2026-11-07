@@ -2,7 +2,7 @@ import { dirname, resolve } from 'node:path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 type Mode = 'preflight' | 'apply';
 
@@ -16,6 +16,14 @@ type Target = {
 const LOCK_KEY = 7_382_914_021;
 const LAST_TIMESTAMP = 1_792_497_100_143;
 const REQUIRED_PAYMENT_TABLES = ['order_payments', 'payment_exceptions'];
+const REQUIRED_PUBLIC_TABLES = [
+  'accounts', 'categories', 'communication_events', 'contact_messages', 'coupons', 'customers',
+  'newsletter_subscribers', 'order_items', 'order_payments', 'orders', 'payment_exceptions',
+  'payment_methods', 'product_categories', 'product_images', 'product_stock_movements',
+  'product_variant_options', 'product_variants', 'products', 'sessions', 'settings',
+  'shipping_methods', 'shipping_rules', 'stock_movements', 'users', 'variant_options',
+  'variant_types', 'verification_tokens',
+];
 
 function parseArgs(argv: string[]): { mode: Mode; target: Target; confirmation?: string } {
   const values = new Map<string, string>();
@@ -78,14 +86,18 @@ function validateTarget(urlString: string, target: Target, vercelEnv?: string): 
 }
 
 function assertServerVersion(version: string): void {
-  if (!version.startsWith('16.')) throw new Error(`Only PostgreSQL 16 is allowed; server reported ${version}.`);
+  if (!version.startsWith('16.') && !version.startsWith('18.')) {
+    throw new Error(`Only PostgreSQL 16 or 18 is allowed; server reported ${version}.`);
+  }
 }
 
 type DatabaseState = {
   schemas: string[];
   relations: string[];
+  publicTables: string[];
   migrationCount: number | null;
   latestMigration: string | null;
+  hasRequiredPaymentTables: boolean;
 };
 
 async function inspectDatabase(sql: ReturnType<typeof postgres>): Promise<DatabaseState> {
@@ -104,11 +116,28 @@ async function inspectDatabase(sql: ReturnType<typeof postgres>): Promise<Databa
     order by n.nspname, c.relname
   `;
 
+  const publicTables = await sql<{ table_name: string }[]>`
+    select table_name from information_schema.tables
+    where table_schema = 'public' and table_type = 'BASE TABLE'
+    order by table_name
+  `;
+
   const metadataPresence = await sql<{ present: boolean }[]>`
     select to_regclass('drizzle.__drizzle_migrations') is not null as present
   `;
   if (!metadataPresence[0]?.present) {
-    return { schemas: schemas.map(({ nspname }) => nspname), relations: relations.map(({ relation_name }) => relation_name), migrationCount: null, latestMigration: null };
+    const paymentTables = await sql<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_name = any(${REQUIRED_PAYMENT_TABLES})
+    `;
+    return {
+      schemas: schemas.map(({ nspname }) => nspname),
+      relations: relations.map(({ relation_name }) => relation_name),
+      publicTables: publicTables.map(({ table_name }) => table_name),
+      migrationCount: null,
+      latestMigration: null,
+      hasRequiredPaymentTables: REQUIRED_PAYMENT_TABLES.every((table) => paymentTables.some(({ table_name }) => table_name === table)),
+    };
   }
 
   const [metadata] = await sql<{ count: string; latest: string | null }[]>`
@@ -117,40 +146,49 @@ async function inspectDatabase(sql: ReturnType<typeof postgres>): Promise<Databa
   return {
     schemas: schemas.map(({ nspname }) => nspname),
     relations: relations.map(({ relation_name }) => relation_name),
+    publicTables: publicTables.map(({ table_name }) => table_name),
     migrationCount: Number(metadata.count),
     latestMigration: metadata.latest,
+    hasRequiredPaymentTables: (await sql<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_name = any(${REQUIRED_PAYMENT_TABLES})
+    `).length === REQUIRED_PAYMENT_TABLES.length,
   };
 }
 
-function assertEmptyDatabase(state: DatabaseState): void {
-  if (state.schemas.length || state.relations.length || state.migrationCount !== null) {
-    throw new Error('Apply refused: target database is not pristine. Use preflight results; this runner never adopts existing databases.');
+function isEmptyApplicationTarget(state: DatabaseState): boolean {
+  const unexpectedSchemas = state.schemas.filter((schema) => schema !== 'neon_auth');
+  const unexpectedRelations = state.relations.filter((relation) => !relation.startsWith('neon_auth.'));
+  return unexpectedSchemas.length === 0 && unexpectedRelations.length === 0 &&
+    state.publicTables.length === 0 && state.migrationCount === null;
+}
+
+function isCompleteBaseline(state: DatabaseState): boolean {
+  const expectedTables = new Set(REQUIRED_PUBLIC_TABLES);
+  const actualTables = new Set(state.publicTables);
+  const tablesMatch = actualTables.size === expectedTables.size &&
+    [...expectedTables].every((table) => actualTables.has(table));
+  const schemasMatch = state.schemas.every((schema) => schema === 'neon_auth' || schema === 'drizzle');
+  return schemasMatch && state.migrationCount === 21 && Number(state.latestMigration) === LAST_TIMESTAMP &&
+    state.hasRequiredPaymentTables && tablesMatch;
+}
+
+function assertEmptyApplicationTarget(state: DatabaseState): void {
+  if (!isEmptyApplicationTarget(state)) {
+    throw new Error('Apply refused: application schemas or Drizzle history already exist. Neon-managed neon_auth objects are preserved; this runner never adopts an existing app schema.');
   }
 }
 
 async function verifyResult(sql: ReturnType<typeof postgres>): Promise<void> {
-  const rows = await sql<{ count: string; max_timestamp: string | null }[]>`
-    select count(*)::text as count, max(created_at)::text as max_timestamp from drizzle.__drizzle_migrations
-  `;
-  const row = rows[0];
-  if (row?.count !== '21' || Number(row.max_timestamp) !== LAST_TIMESTAMP) {
-    throw new Error('Migration metadata verification failed.');
-  }
-  const tables = await sql<{ table_name: string }[]>`
-    select table_name from information_schema.tables
-    where table_schema = 'public' and table_name = any(${REQUIRED_PAYMENT_TABLES})
-  `;
-  const present = new Set(tables.map((table) => table.table_name));
-  if (REQUIRED_PAYMENT_TABLES.some((table) => !present.has(table))) {
-    throw new Error('Required payment tables are missing after migration.');
-  }
+  const state = await inspectDatabase(sql);
+  if (!isCompleteBaseline(state)) throw new Error('Migration metadata or final application schema verification failed.');
 }
 
-async function main(): Promise<void> {
-  const { mode, target } = parseArgs(process.argv.slice(2));
-  const connectionUrl = process.env.BASELINE_DATABASE_URL;
+export async function runBaseline(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const { mode, target } = parseArgs(args);
+  const connectionUrl = env.BASELINE_DATABASE_URL;
   if (!connectionUrl?.trim()) throw new Error('BASELINE_DATABASE_URL is required.');
-  const url = validateTarget(connectionUrl, target, process.env.VERCEL_ENV);
+  const url = validateTarget(connectionUrl, target, env.VERCEL_ENV);
   const remote = !['localhost', '127.0.0.1', '::1'].includes(url.hostname);
   const sql = postgres(connectionUrl, {
     max: 1,
@@ -170,12 +208,16 @@ async function main(): Promise<void> {
 
     if (mode === 'preflight') {
       const state = await inspectDatabase(sql);
+      const eligible = isEmptyApplicationTarget(state);
       console.info(JSON.stringify({
-        status: state.schemas.length || state.relations.length || state.migrationCount !== null ? 'non-empty-review-required' : 'empty-eligible-for-review',
+        status: eligible
+          ? (state.schemas.includes('neon_auth') ? 'neon-managed-schema-only-eligible-for-review' : 'empty-eligible-for-review')
+          : 'non-empty-review-required',
         target: { host: target.host, database: target.database, user: target.user, environment: target.environment },
         postgresVersion: identity[0].version,
         userSchemas: state.schemas,
         userRelations: state.relations,
+        publicTables: state.publicTables,
         migrationCount: state.migrationCount,
         latestMigration: state.latestMigration,
       }, null, 2));
@@ -187,7 +229,12 @@ async function main(): Promise<void> {
       locked = true;
     }
 
-    assertEmptyDatabase(await inspectDatabase(sql));
+    const state = await inspectDatabase(sql);
+    if (mode === 'apply' && isCompleteBaseline(state)) {
+      console.info('Known complete baseline already present; no-op.');
+      return;
+    }
+    assertEmptyApplicationTarget(state);
     console.info(`Empty-target preflight passed for explicitly expected ${target.environment} database; PostgreSQL ${identity[0].version}.`);
 
     const db = drizzle(sql);
@@ -206,9 +253,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  const rawMessage = error instanceof Error ? error.message : 'Unexpected baseline runner failure.';
-  const message = rawMessage.replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '[REDACTED_DATABASE_URL]');
-  console.error(`Baseline runner stopped: ${message}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  runBaseline(process.argv.slice(2)).catch((error: unknown) => {
+    const rawMessage = error instanceof Error ? error.message : 'Unexpected baseline runner failure.';
+    const message = rawMessage.replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '[REDACTED_DATABASE_URL]');
+    console.error(`Baseline runner stopped: ${message}`);
+    process.exitCode = 1;
+  });
+}

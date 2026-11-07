@@ -4,12 +4,20 @@ Estado: **referencia experimental ejecutada hasta 0020; no es baseline de produc
 
 ## Runner reutilizable experimental (requiere revisión explícita)
 
-`scripts/baseline-runner.ts` dispone de dos modos. **No se conecta ni se ejecuta en Vercel durante este cambio.** La URL nunca se obtiene de `POSTGRES_URL`, `DATABASE_URL` ni de un fallback. Para Vercel, copiar manualmente las credenciales del entorno Preview o Development aprobado a `BASELINE_DATABASE_URL`; configurar Vercel `VERCEL_ENV` en el proceso hace que Production se rechace siempre. No usar credenciales ni destinos de producción. Neon puede ser el proveedor subyacente: el host real debe indicarse explícitamente y coincidir con la URL. Una conexión remota fuerza SSL.
+### Bootstrap automático solo para Vercel Preview
+
+`npm run build` ejecuta `prebuild`, que llama `scripts/baseline-preview.ts`. El wrapper no hace nada salvo que `VERCEL_ENV=preview` **y** `BASELINE_PREVIEW_APPLY=1`. Para habilitarlo, configurar `BASELINE_PREVIEW_APPLY=1` únicamente en el scope **Preview** de Vercel. No crear ni configurar esta variable en Production. El único origen de conexión es `POSTGRES_URL_NON_POOLING`; no hay fallback a `POSTGRES_URL`, `DATABASE_URL` ni otra variable. El wrapper deriva host/database/user de esa URL y arma la confirmación exacta internamente. Desarrollo, local y Production salen sin conexión ni escrituras.
+
+La primera aplicación exige PostgreSQL 16/18 y una base con `public` vacío, ningún schema de aplicación y sin `drizzle.__drizzle_migrations`; solo se toleran objetos del schema Neon `neon_auth`. Un baseline completo conocido (21 filas, timestamp `1792497100143` y ambas tablas de pago) es no-op. Cualquier otro estado no vacío, parcial o con drift falla cerrado. El baseline es experimental y no certifica equivalencia histórica.
+
+`scripts/baseline-runner.ts` dispone de dos modos: preflight de solo lectura y apply fail-closed. El hook `prebuild` llama a `scripts/baseline-preview.ts`, que solo ejecuta apply cuando `VERCEL_ENV=preview` y `BASELINE_PREVIEW_APPLY=1`; obtiene la conexión únicamente desde `POSTGRES_URL_NON_POOLING`. La variable de activación debe existir solo en Preview, nunca en Production. El runner CLI nunca usa `POSTGRES_URL`, `DATABASE_URL` ni una URL de fallback. Neon puede ser el proveedor subyacente; valida host directo y fuerza SSL remoto.
 
 Variables requeridas (solo nombres; no guardar valores en este documento):
 
-- `BASELINE_DATABASE_URL`: URL PostgreSQL completa, proporcionada explícitamente para el destino autorizado.
-- `VERCEL_ENV`: requerido y debe coincidir con `preview` o `development` cuando se apunta a esos entornos de Vercel. Para `disposable`, la URL debe apuntar estrictamente a loopback local. `VERCEL_ENV=production` se rechaza siempre.
+- `BASELINE_DATABASE_URL`: URL PostgreSQL completa para ejecutar el runner CLI manualmente en un destino autorizado. No se configura en Vercel.
+- `POSTGRES_URL_NON_POOLING`: usada por el hook automático solo en Preview; provista por la integración Neon de Vercel.
+- `BASELINE_PREVIEW_APPLY=1`: bandera explícita para activar baseline automática en Preview; nunca añadirla a Production.
+- `VERCEL_ENV`: el runner requiere `preview`/`development` coincidente; el wrapper Preview exige exactamente `preview`. Para `disposable`, la URL debe apuntar estrictamente a loopback local. `VERCEL_ENV=production` se rechaza siempre.
 
 Ejecutar desde cualquier directorio con `npx tsx` (no se agrega ni modifica ningún script de package.json):
 
@@ -22,7 +30,7 @@ npx tsx /ruta/absoluta/al/proyecto/scripts/baseline-runner.ts \
    --target-environment disposable
 ```
 
-El ejemplo usa la base local descartable. El modo `preflight` es de solo lectura: comprueba identidad de host (comparando la URL), base y usuario, PostgreSQL 16, ausencia de esquemas de usuario ajenos a `public`, relaciones de usuario y metadata de Drizzle. No crea esquemas ni ejecuta migraciones. PostgreSQL 16 es el único aceptado porque la repetibilidad documentada se comprobó solo en 16.14. Para Vercel Preview/Development, usar `--target-environment preview` (o `development`) y ejecutar con `VERCEL_ENV` coincidente; la URL debe ser el endpoint directo, no el pooler. No correr contra Production.
+El ejemplo usa la base local descartable. El modo `preflight` es de solo lectura: comprueba identidad de host (comparando la URL), base y usuario, versión PostgreSQL, schemas/relations y metadata de Drizzle. No crea esquemas ni ejecuta migraciones. El runner acepta majors 16 y 18, pero la repetibilidad solo se ha probado en PostgreSQL 16.14; 18.6 debe validarse primero en Preview. `neon_auth` se reconoce como schema gestionado de Neon y se conserva sin cambios; el app-schema en `public` y la metadata Drizzle igual deben estar vacíos para `apply`. Para Vercel Preview/Development, usar `--target-environment preview` (o `development`) y ejecutar con `VERCEL_ENV` coincidente; la URL debe ser el endpoint directo, no el pooler. No correr contra Production.
 
 Solo después de revisar el destino, el preflight y este documento, una persona debe autorizar por separado la aplicación en una base vacía disposable local o Vercel Preview/Development. El comando de escritura requiere confirmación exacta del nombre de base:
 
@@ -65,7 +73,7 @@ Alternativas para establecer la referencia: (1) una base histórica verificable,
 
 ## Gates antes de adopción
 
-1. Ejecutar primero `preflight` contra una base disposable local o una branch Vercel Preview dedicada. No apuntar a Production. Verificar que el host sea directo (no pooler), el rol, database, PostgreSQL 16 y que la identidad coincida con los argumentos; el script nunca obtiene URL por fallback.
+1. Ejecutar primero `preflight` contra una base disposable local o una branch Vercel Preview dedicada. No apuntar a Production. Verificar que el host sea directo (no pooler), el rol, database, versión PostgreSQL y que la identidad coincida con los argumentos; el script nunca obtiene URL por fallback.
 2. Solo una base realmente vacía puede pasar a `apply`. Bases con tablas, schemas extra o metadata previa quedan clasificadas para revisión y no las adopta el runner.
 3. Probar el runner primero en las bases descartables existentes, luego en una branch Preview vacía. Cualquier cambio Vercel requiere confirmar target y alcance; no conectar producción como parte de esta tarea.
 4. Para una base existente, usar solo diagnóstico de lectura, respaldos y evaluación de historial. No insertar marcadores ni ejecutar 0018–0020 automáticamente sin una estrategia específica de adopción validada.
@@ -78,4 +86,4 @@ Alternativas para establecer la referencia: (1) una base histórica verificable,
 - ¿Qué datos iniciales son obligatorios para una instalación nueva y cuáles son solo transformaciones de datos existentes?
 - ¿Qué aislamiento dentro del contenedor existente permite manejar las referencias a `public` sin afectar ningún otro recurso?
 
-Las bases candidatas hasta 0020 son **referencias experimentales reproducibles**, no un baseline aprobado. El runner solo se ha probado en loopback local, no aplicado a Vercel; tampoco existe procedimiento de adopción de bases existentes. `schema.ts` y snapshot 0020 reflejan el estado deseado; el diff de Drizzle contra regeneración fresca está vacío. El replay requiere conservar las dos correcciones explícitas en la copia de 0001/0002. La comparación física se hizo manualmente y las repeticiones ocurrieron solo en PostgreSQL 16.14.
+Las bases candidatas hasta 0020 son **referencias experimentales reproducibles**, no un baseline aprobado. El runner solo se ha probado en loopback local, no aplicado a Vercel; tampoco existe procedimiento de adopción de bases existentes. `schema.ts` y snapshot 0020 reflejan el estado deseado; el diff de Drizzle contra regeneración fresca está vacío. El replay requiere conservar las dos correcciones explícitas en la copia de 0001/0002. La comparación física se hizo manualmente y las repeticiones ocurrieron solo en PostgreSQL 16.14. El Neon Preview branch observado es PostgreSQL 18.6 con `neon_auth`; los cambios recientes del runner para permitir PG18 y preservar ese schema aún no han pasado typecheck/lint ni se han aplicado.
