@@ -1,8 +1,9 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '@/drizzle/schema';
+import { getDatabaseUrl } from './db-config';
 
-const connectionString = process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5434/tienda_nube';
+const connectionString = getDatabaseUrl();
 
 const client = postgres(connectionString, {
   max: 5,

@@ -1,12 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import { NextRequest, NextResponse } from 'next/server';
 
-vi.mock('fs/promises', () => ({ mkdir: vi.fn(), writeFile: vi.fn() }));
+vi.mock('@vercel/blob', () => ({ put: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ assertAdminRequest: vi.fn() }));
 vi.mock('@/app/admin/configuracion/actions', () => ({ getSettings: vi.fn() }));
 
-import { mkdir, writeFile } from 'fs/promises';
+import { put } from '@vercel/blob';
 import { assertAdminRequest } from '@/lib/auth';
 import { getSettings } from '@/app/admin/configuracion/actions';
 import { POST } from './route';
@@ -23,8 +23,24 @@ function request(data: Buffer, name = 'image.png', type = 'image/png', productId
 }
 
 describe('secure image upload', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.mocked(put).mockImplementation(async (pathname) => {
+      const finalPathname = pathname.replace(/(\.[^./]+)$/, '-blobtest$1');
+      return {
+        url: `https://blob.example/${finalPathname}`,
+        downloadUrl: `https://blob.example/${finalPathname}?download=1`,
+        pathname: finalPathname,
+        contentType: 'image/png',
+        contentDisposition: 'inline',
+        etag: 'test-etag',
+      };
+    });
     vi.mocked(assertAdminRequest).mockResolvedValue({ ok: true } as Awaited<ReturnType<typeof assertAdminRequest>>);
     vi.mocked(getSettings).mockResolvedValue({ imageConversionToWebp: false } as Awaited<ReturnType<typeof getSettings>>);
   });
@@ -35,13 +51,13 @@ describe('secure image upload', () => {
     const parse = vi.spyOn(req, 'formData');
     expect((await POST(req)).status).toBe(401);
     expect(parse).not.toHaveBeenCalled();
-    expect(mkdir).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
     expect(getSettings).not.toHaveBeenCalled();
   });
 
   it.each(['', '../1', '-1', '01', '1.0', '1e3', '9007199254740992'])('rejects invalid productId %s', async (id) => {
     expect((await POST(request(await image('png'), 'a.png', 'image/png', id))).status).toBe(400);
-    expect(writeFile).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it.each(['jpeg', 'png', 'webp', 'gif'] as const)('uses the decoded %s format and an opaque contained name', async (format) => {
@@ -50,9 +66,14 @@ describe('secure image upload', () => {
     expect(response.status).toBe(200);
     const result = await response.json();
     const ext = format === 'jpeg' ? 'jpg' : format;
-    expect(result.key).toMatch(new RegExp(`^[0-9a-f-]{36}\\.${ext}$`));
-    expect(result.url).toBe(`/product-images/${result.key}`);
-    expect(writeFile).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/public/product-images/${result.key}$`)), original, { flag: 'wx' });
+    expect(result.key).toMatch(new RegExp(`^tienda-nube/preview/product-images/[0-9a-f-]{36}-blobtest\\.${ext}$`));
+    expect(result.url).toBe(`https://blob.example/${result.key}`);
+    expect(put).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(`^tienda-nube/preview/product-images/[0-9a-f-]{36}\\.${ext}$`)),
+      original,
+      expect.objectContaining({ access: 'public', addRandomSuffix: true,
+        contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}` })
+    );
   });
 
   it('converts non-GIF images to WebP when enabled, but keeps GIF bytes', async () => {
@@ -60,12 +81,12 @@ describe('secure image upload', () => {
     const png = await image('png');
     const converted = await POST(request(png, 'wrong.gif', 'image/gif'));
     expect((await converted.json()).key).toMatch(/\.webp$/);
-    const convertedBytes = vi.mocked(writeFile).mock.calls[0][1] as Buffer;
+    const convertedBytes = vi.mocked(put).mock.calls[0][1] as Buffer;
     expect((await sharp(convertedBytes).metadata()).format).toBe('webp');
     const gif = await image('gif');
     const kept = await POST(request(gif, 'wrong.png', 'image/png'));
     expect((await kept.json()).key).toMatch(/\.gif$/);
-    expect(vi.mocked(writeFile).mock.calls[1][1]).toEqual(gif);
+    expect(vi.mocked(put).mock.calls[1][1]).toEqual(gif);
   });
 
   it('rejects spoofed, truncated, unsupported, empty, and oversized input', async () => {
@@ -74,7 +95,7 @@ describe('secure image upload', () => {
     for (const data of [Buffer.from('not an image'), png.subarray(0, 32), svg, Buffer.alloc(0), Buffer.alloc(10 * 1024 * 1024 + 1)]) {
       expect((await POST(request(data))).status).toBe(400);
     }
-    expect(writeFile).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
     expect(getSettings).not.toHaveBeenCalled();
   });
 });

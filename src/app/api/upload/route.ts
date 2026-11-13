@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
+import { put } from '@vercel/blob';
 import { getSettings } from '@/app/admin/configuracion/actions';
 import { assertAdminRequest } from '@/lib/auth';
 
@@ -10,6 +9,21 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_PIXELS = 40_000_000; // Includes all animation frames.
 const MAX_FRAMES = 100;
 const EXTENSIONS: Record<string, string> = { jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp' };
+const CONTENT_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+};
+const VERCEL_ENVIRONMENTS = new Set(['development', 'preview', 'production']);
+
+function getBlobEnvironment(): string {
+  const vercelEnvironment = process.env.VERCEL_ENV;
+  if (vercelEnvironment) {
+    if (!VERCEL_ENVIRONMENTS.has(vercelEnvironment)) {
+      throw new Error('Unsupported VERCEL_ENV for Blob namespace.');
+    }
+    return vercelEnvironment;
+  }
+  return process.env.NODE_ENV === 'production' ? 'production' : 'development';
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -86,18 +100,15 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = shouldConvert ? 'webp' : EXTENSIONS[format];
-    const filename = `${randomUUID()}.${ext}`;
+    const pathname = `tienda-nube/${getBlobEnvironment()}/product-images/${randomUUID()}.${ext}`;
+    // C4-TRACE: namespace validated uploads by deployment environment in the shared Blob store.
+    const blob = await put(pathname, buffer, {
+      access: 'public',
+      addRandomSuffix: true,
+      contentType: CONTENT_TYPES[ext],
+    });
 
-    const uploadDir = path.resolve(process.cwd(), 'public', 'product-images');
-    const filepath = path.resolve(uploadDir, filename);
-    if (path.dirname(filepath) !== uploadDir) throw new Error('Invalid upload path');
-    await mkdir(uploadDir, { recursive: true });
-
-    await writeFile(filepath, buffer, { flag: 'wx' });
-
-    const url = `/product-images/${filename}`;
-
-    return NextResponse.json({ url, key: filename });
+    return NextResponse.json({ url: blob.url, key: blob.pathname });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
